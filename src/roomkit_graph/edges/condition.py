@@ -26,27 +26,27 @@ class Condition:
     @classmethod
     def field(cls, path: str) -> ConditionBuilder:
         """Start building a field condition: Condition.field("node.output.x").equals("y")."""
-        raise NotImplementedError
+        return ConditionBuilder(path)
 
     @classmethod
     def otherwise(cls) -> Condition:
         """Default fallback edge — matches when no other condition does."""
-        raise NotImplementedError
+        return cls(type="otherwise")
 
     @classmethod
     def all_(cls, *conditions: Condition) -> Condition:
         """All conditions must be true (AND)."""
-        raise NotImplementedError
+        return cls(type="all", conditions=conditions)
 
     @classmethod
     def any_(cls, *conditions: Condition) -> Condition:
         """At least one condition must be true (OR)."""
-        raise NotImplementedError
+        return cls(type="any", conditions=conditions)
 
     @classmethod
     def not_(cls, condition: Condition) -> Condition:
         """Negate a condition."""
-        raise NotImplementedError
+        return cls(type="not", conditions=(condition,))
 
     # --- Evaluation ---
 
@@ -62,12 +62,27 @@ class Condition:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
-        raise NotImplementedError
+        data: dict[str, Any] = {"type": self.type}
+        if self.type == "field":
+            data["path"] = self.path
+            data["op"] = self.op
+            data["value"] = self.value
+        elif self.type in ("all", "any", "not"):
+            data["conditions"] = [c.to_dict() for c in self.conditions]
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Condition:
         """Deserialize from a dict."""
-        raise NotImplementedError
+        ctype = data["type"]
+        if ctype == "field":
+            return cls(type="field", path=data["path"], op=data["op"], value=data.get("value"))
+        if ctype == "otherwise":
+            return cls(type="otherwise")
+        if ctype in ("all", "any", "not"):
+            children = tuple(cls.from_dict(c) for c in data.get("conditions", []))
+            return cls(type=ctype, conditions=children)
+        return cls(type=ctype)
 
 
 class ConditionBuilder:
@@ -76,26 +91,29 @@ class ConditionBuilder:
     def __init__(self, path: str) -> None:
         self._path = path
 
+    def _build(self, op: str, value: Any = None) -> Condition:
+        return Condition(type="field", path=self._path, op=op, value=value)
+
     def equals(self, value: Any) -> Condition:
-        raise NotImplementedError
+        return self._build("eq", value)
 
     def not_equals(self, value: Any) -> Condition:
-        raise NotImplementedError
+        return self._build("neq", value)
 
     def in_(self, values: list[Any]) -> Condition:
-        raise NotImplementedError
+        return self._build("in", values)
 
     def not_in(self, values: list[Any]) -> Condition:
-        raise NotImplementedError
+        return self._build("not_in", values)
 
     def contains(self, value: str) -> Condition:
-        raise NotImplementedError
+        return self._build("contains", value)
 
     def gt(self, value: int | float) -> Condition:
-        raise NotImplementedError
+        return self._build("gt", value)
 
     def lt(self, value: int | float) -> Condition:
-        raise NotImplementedError
+        return self._build("lt", value)
 
     def exists(self) -> Condition:
-        raise NotImplementedError
+        return self._build("exists")

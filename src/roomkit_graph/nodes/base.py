@@ -32,9 +32,22 @@ class Node:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
-        raise NotImplementedError
+        data: dict[str, Any] = {"id": self.id, "type": self.type.value}
+        if self.config:
+            data["config"] = self.config
+        if self.metadata:
+            data["metadata"] = self.metadata
+        if self.parent is not None:
+            data["parent"] = self.parent
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Node:
         """Deserialize from a dict."""
-        raise NotImplementedError
+        return cls(
+            id=data["id"],
+            type=data["type"],
+            config=data.get("config", {}),
+            metadata=data.get("metadata", {}),
+            parent=data.get("parent"),
+        )

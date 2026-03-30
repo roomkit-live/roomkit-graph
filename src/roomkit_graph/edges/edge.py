@@ -17,9 +17,22 @@ class Edge:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
-        raise NotImplementedError
+        data: dict[str, Any] = {"source": self.source, "target": self.target}
+        if self.condition is not None:
+            data["condition"] = self.condition.to_dict()
+        if self.metadata:
+            data["metadata"] = self.metadata
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Edge:
         """Deserialize from a dict."""
-        raise NotImplementedError
+        condition = None
+        if data.get("condition"):
+            condition = Condition.from_dict(data["condition"])
+        return cls(
+            source=data["source"],
+            target=data["target"],
+            condition=condition,
+            metadata=data.get("metadata", {}),
+        )
