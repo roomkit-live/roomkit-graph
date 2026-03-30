@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from typing import Any
 
 
@@ -8,10 +8,11 @@ class FunctionRegistry:
     """Registry for custom Python functions used by FunctionNode(action="custom").
 
     Functions are registered by name and looked up at runtime during execution.
+    Accepts both sync and async callables — sync functions are auto-wrapped at execution time.
     """
 
     def __init__(self) -> None:
-        self._functions: dict[str, Callable[..., Coroutine[Any, Any, Any]]] = {}
+        self._functions: dict[str, Callable[..., Any]] = {}
 
     def function(self, name: str) -> Callable:
         """Decorator to register a custom function by name.
@@ -23,11 +24,11 @@ class FunctionRegistry:
         """
         raise NotImplementedError
 
-    def register(self, name: str, func: Callable[..., Coroutine[Any, Any, Any]]) -> None:
+    def register(self, name: str, func: Callable[..., Any]) -> None:
         """Register a function programmatically."""
         raise NotImplementedError
 
-    def get(self, name: str) -> Callable[..., Coroutine[Any, Any, Any]]:
+    def get(self, name: str) -> Callable[..., Any]:
         """Look up a registered function by name. Raises KeyError if not found."""
         raise NotImplementedError
 

@@ -30,6 +30,10 @@ test:
 test-cov:
 	uv run pytest --cov --cov-report=term-missing
 
-check: lint-fix format typecheck security
+check: lint-fix format-check typecheck security
 
 all: check test
+
+clean:
+	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov dist build
+	find src tests -type d -name __pycache__ -exec rm -rf {} +

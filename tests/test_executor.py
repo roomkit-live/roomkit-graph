@@ -161,10 +161,14 @@ async def test_resume_after_human_node():
     g = Graph(id="human", name="Human", trigger=ManualTrigger())
     g.add_nodes(
         Node("start", type="start"),
-        Node("review", type="human", config={
-            "prompt": "Approve?",
-            "actions": ["approve", "reject"],
-        }),
+        Node(
+            "review",
+            type="human",
+            config={
+                "prompt": "Approve?",
+                "actions": ["approve", "reject"],
+            },
+        ),
         Node("end", type="end"),
     )
     g.add_edges(Edge("start", "review"), Edge("review", "end"))
@@ -179,3 +183,21 @@ async def test_resume_after_human_node():
     await executor.resume("review", {"action": "approve", "feedback": "Looks good"})
 
     assert executor.context.get("review.output.action") == "approve"
+
+
+async def test_step_before_start_returns_false():
+    g = _linear_graph()
+    executor = WorkflowExecutor(g)
+
+    # Stepping before start() should return False (not started)
+    advanced = await executor.step()
+    assert advanced is False
+
+
+async def test_executor_with_injected_context():
+    g = _linear_graph()
+    ctx = WorkflowContext()
+    ctx.set("start", {"input": "restored"})
+
+    executor = WorkflowExecutor(g, context=ctx)
+    assert executor.context.get("start.output.input") == "restored"

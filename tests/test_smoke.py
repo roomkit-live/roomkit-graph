@@ -5,19 +5,7 @@ from __future__ import annotations
 
 def test_import_public_api():
     from roomkit_graph import (
-        Condition,
-        Edge,
-        EventTrigger,
-        FunctionRegistry,
-        Graph,
-        ManualTrigger,
-        Node,
         NodeType,
-        ScheduledTrigger,
-        TemplateResolver,
-        WebhookTrigger,
-        WorkflowContext,
-        WorkflowExecutor,
         __version__,
     )
 
@@ -41,7 +29,8 @@ def test_node_type_coercion():
     assert node.id == "my-node"
 
 
-def test_trigger_types_exist():
+def test_trigger_types_enforced():
+    """Trigger subclasses enforce their type field via __post_init__."""
     from roomkit_graph import (
         EventTrigger,
         ManualTrigger,
@@ -53,6 +42,9 @@ def test_trigger_types_exist():
     assert ScheduledTrigger().type == "scheduled"
     assert EventTrigger().type == "event"
     assert ManualTrigger().type == "manual"
+
+    # Type is enforced — cannot be overridden
+    assert WebhookTrigger(source_type="github").type == "webhook"
 
 
 def test_error_hierarchy():
@@ -70,3 +62,9 @@ def test_error_hierarchy():
     assert issubclass(TemplateError, GraphError)
     assert issubclass(ExecutionError, GraphError)
     assert issubclass(NoValidTransitionError, ExecutionError)
+
+
+def test_graph_registry_is_singleton():
+    from roomkit_graph import FunctionRegistry, graph_registry
+
+    assert isinstance(graph_registry, FunctionRegistry)

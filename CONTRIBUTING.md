@@ -50,7 +50,7 @@ If you want to contribute but nothing in the tracker appeals to you, here are ar
 ```bash
 uv run ruff check src/ tests/       # Lint (E/F/I/N/UP/B/SIM rules)
 uv run ruff format --check src/ tests/  # Format check
-uv run mypy src/roomkit_graph/       # Type check (strict)
+uv run ty check src/roomkit_graph/   # Type check
 uv run bandit -r src/ -c pyproject.toml  # Security scan
 uv run pytest                        # Tests
 ```

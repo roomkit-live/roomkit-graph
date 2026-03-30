@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from roomkit_graph.engine.context import WorkflowContext
 
 
 @dataclass(frozen=True)
@@ -47,8 +50,12 @@ class Condition:
 
     # --- Evaluation ---
 
-    def evaluate(self, context: dict[str, Any]) -> bool:
-        """Evaluate this condition against a workflow context dict."""
+    def evaluate(self, context: WorkflowContext) -> bool:
+        """Evaluate this condition against a WorkflowContext."""
+        raise NotImplementedError
+
+    def evaluate_dict(self, context: dict[str, Any]) -> bool:
+        """Evaluate this condition against a raw dict (for standalone use)."""
         raise NotImplementedError
 
     # --- Serialization ---

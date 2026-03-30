@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from roomkit_graph import Condition
-
+from roomkit_graph import Condition, WorkflowContext
 
 # --- Builder API ---
 
@@ -100,127 +97,149 @@ def test_not():
     assert len(cond.conditions) == 1
 
 
-# --- Evaluation ---
+# --- Evaluation with WorkflowContext ---
+
+
+def _ctx(**nodes: dict) -> WorkflowContext:
+    """Helper: build context with node outputs."""
+    ctx = WorkflowContext()
+    for node_id, output in nodes.items():
+        ctx.set(node_id, output)
+    return ctx
 
 
 def test_evaluate_eq_true():
     cond = Condition.field("triage.output.severity").equals("critical")
-    ctx = {"triage": {"output": {"severity": "critical"}}}
+    ctx = _ctx(triage={"severity": "critical"})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_eq_false():
     cond = Condition.field("triage.output.severity").equals("critical")
-    ctx = {"triage": {"output": {"severity": "low"}}}
+    ctx = _ctx(triage={"severity": "low"})
 
     assert cond.evaluate(ctx) is False
 
 
 def test_evaluate_in_true():
-    cond = Condition.field("status").in_(["approved", "accepted"])
-    ctx = {"status": "approved"}
+    cond = Condition.field("review.output.status").in_(["approved", "accepted"])
+    ctx = _ctx(review={"status": "approved"})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_in_false():
-    cond = Condition.field("status").in_(["approved", "accepted"])
-    ctx = {"status": "rejected"}
+    cond = Condition.field("review.output.status").in_(["approved", "accepted"])
+    ctx = _ctx(review={"status": "rejected"})
 
     assert cond.evaluate(ctx) is False
 
 
 def test_evaluate_contains_true():
-    cond = Condition.field("tags").contains("urgent")
-    ctx = {"tags": "urgent-fix-needed"}
+    cond = Condition.field("triage.output.tags").contains("urgent")
+    ctx = _ctx(triage={"tags": "urgent-fix-needed"})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_gt_true():
-    cond = Condition.field("amount").gt(100)
-    ctx = {"amount": 250}
+    cond = Condition.field("extract.output.amount").gt(100)
+    ctx = _ctx(extract={"amount": 250})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_lt_true():
-    cond = Condition.field("score").lt(50)
-    ctx = {"score": 30}
+    cond = Condition.field("extract.output.score").lt(50)
+    ctx = _ctx(extract={"score": 30})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_exists_true():
-    cond = Condition.field("email").exists()
-    ctx = {"email": "test@example.com"}
+    cond = Condition.field("extract.output.email").exists()
+    ctx = _ctx(extract={"email": "test@example.com"})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_exists_false():
-    cond = Condition.field("email").exists()
-    ctx = {"name": "test"}
+    cond = Condition.field("extract.output.email").exists()
+    ctx = _ctx(extract={"name": "test"})
 
     assert cond.evaluate(ctx) is False
 
 
 def test_evaluate_otherwise_always_true():
     cond = Condition.otherwise()
-    assert cond.evaluate({}) is True
-    assert cond.evaluate({"any": "thing"}) is True
+    assert cond.evaluate(WorkflowContext()) is True
+    assert cond.evaluate(_ctx(any={"thing": True})) is True
 
 
 def test_evaluate_all_true():
     cond = Condition.all_(
-        Condition.field("severity").equals("critical"),
-        Condition.field("team").equals("backend"),
+        Condition.field("triage.output.severity").equals("critical"),
+        Condition.field("triage.output.team").equals("backend"),
     )
-    ctx = {"severity": "critical", "team": "backend"}
+    ctx = _ctx(triage={"severity": "critical", "team": "backend"})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_all_false():
     cond = Condition.all_(
-        Condition.field("severity").equals("critical"),
-        Condition.field("team").equals("backend"),
+        Condition.field("triage.output.severity").equals("critical"),
+        Condition.field("triage.output.team").equals("backend"),
     )
-    ctx = {"severity": "critical", "team": "frontend"}
+    ctx = _ctx(triage={"severity": "critical", "team": "frontend"})
 
     assert cond.evaluate(ctx) is False
 
 
 def test_evaluate_any_true():
     cond = Condition.any_(
-        Condition.field("priority").equals("P1"),
-        Condition.field("escalated").equals(True),
+        Condition.field("triage.output.priority").equals("P1"),
+        Condition.field("triage.output.escalated").equals(True),
     )
-    ctx = {"priority": "P2", "escalated": True}
+    ctx = _ctx(triage={"priority": "P2", "escalated": True})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_not_true():
-    cond = Condition.not_(Condition.field("status").equals("closed"))
-    ctx = {"status": "open"}
+    cond = Condition.not_(Condition.field("review.output.status").equals("closed"))
+    ctx = _ctx(review={"status": "open"})
 
     assert cond.evaluate(ctx) is True
 
 
 def test_evaluate_not_false():
-    cond = Condition.not_(Condition.field("status").equals("closed"))
-    ctx = {"status": "closed"}
+    cond = Condition.not_(Condition.field("review.output.status").equals("closed"))
+    ctx = _ctx(review={"status": "closed"})
 
     assert cond.evaluate(ctx) is False
 
 
 def test_evaluate_missing_path_returns_false():
-    cond = Condition.field("nonexistent.path").equals("value")
-    ctx = {"other": "data"}
+    cond = Condition.field("nonexistent.output.path").equals("value")
+    ctx = _ctx(other={"data": True})
 
     assert cond.evaluate(ctx) is False
+
+
+# --- evaluate_dict (standalone, raw dict) ---
+
+
+def test_evaluate_dict_eq():
+    cond = Condition.field("severity").equals("critical")
+    assert cond.evaluate_dict({"severity": "critical"}) is True
+    assert cond.evaluate_dict({"severity": "low"}) is False
+
+
+def test_evaluate_dict_otherwise():
+    cond = Condition.otherwise()
+    assert cond.evaluate_dict({}) is True
 
 
 # --- Serialization ---
@@ -293,5 +312,4 @@ def test_condition_round_trip():
 
     assert restored.type == original.type
     assert len(restored.conditions) == len(original.conditions)
-    # Structural equality
     assert restored.to_dict() == data

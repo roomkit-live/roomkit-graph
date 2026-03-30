@@ -5,14 +5,11 @@ from __future__ import annotations
 import pytest
 
 from roomkit_graph import (
-    Condition,
     Edge,
     Graph,
     ManualTrigger,
     Node,
-    WebhookTrigger,
 )
-
 
 # --- Graph construction ---
 
@@ -219,6 +216,28 @@ def test_validate_unreachable_node():
 
     errors = g.validate()
     assert any("orphan" in e for e in errors)
+
+
+def test_validate_self_loop():
+    g = Graph(id="test", name="Test", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("loop", type="agent"),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "loop"), Edge("loop", "loop"), Edge("loop", "end"))
+
+    # Self-loops are valid (e.g., retry patterns) — should not error
+    errors = g.validate()
+    assert errors == []
+
+
+def test_validate_empty_graph():
+    g = Graph(id="test", name="Test", trigger=ManualTrigger())
+
+    errors = g.validate()
+    assert any("start" in e.lower() for e in errors)
+    assert any("end" in e.lower() for e in errors)
 
 
 # --- Serialization ---

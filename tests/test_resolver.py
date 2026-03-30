@@ -50,9 +50,9 @@ def test_resolve_missing_placeholder_raises():
     resolver = TemplateResolver(ctx)
 
     # Missing path should raise TemplateError
-    from roomkit_graph import TemplateError
-
     import pytest
+
+    from roomkit_graph import TemplateError
 
     with pytest.raises(TemplateError):
         resolver.resolve("{{ghost.output.field}}")

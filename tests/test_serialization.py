@@ -7,6 +7,7 @@ import json
 from roomkit_graph import (
     Condition,
     Edge,
+    EventTrigger,
     Graph,
     ManualTrigger,
     Node,
@@ -26,7 +27,14 @@ def _bug_triage_graph() -> Graph:
     g.add_nodes(
         Node("start", type="start"),
         Node("triage", type="agent", config={"agent_id": "triage-agent"}),
-        Node("escalate", type="notification", config={"channel": "slack", "template": "Critical!"}),
+        Node(
+            "escalate",
+            type="notification",
+            config={
+                "channel": "slack",
+                "template": "Critical!",
+            },
+        ),
         Node("assign", type="agent", config={"agent_id": "labeler-agent"}),
         Node("end", type="end"),
     )
@@ -230,3 +238,71 @@ def test_graph_from_raw_json():
     assert len(g.edges) == 2
     assert g.nodes["step1"].config["action"] == "delay"
     assert g.validate() == []
+
+
+# --- Node type serialization coverage ---
+
+
+def test_human_node_serialization():
+    node = Node(
+        "review",
+        type="human",
+        config={
+            "prompt": "Approve?",
+            "actions": ["approve", "reject"],
+            "timeout": "72h",
+        },
+    )
+    data = node.to_dict()
+    restored = Node.from_dict(data)
+
+    assert restored.type.value == "human"
+    assert restored.config["actions"] == ["approve", "reject"]
+    assert restored.config["timeout"] == "72h"
+
+
+def test_function_node_serialization():
+    node = Node(
+        "call",
+        type="function",
+        config={
+            "action": "http_request",
+            "method": "POST",
+            "url": "https://api.example.com",
+        },
+    )
+    data = node.to_dict()
+    restored = Node.from_dict(data)
+
+    assert restored.type.value == "function"
+    assert restored.config["action"] == "http_request"
+
+
+def test_orchestration_node_serialization():
+    node = Node(
+        "pipeline",
+        type="orchestration",
+        config={
+            "orchestration_id": "meeting-pipeline",
+        },
+    )
+    data = node.to_dict()
+    restored = Node.from_dict(data)
+
+    assert restored.type.value == "orchestration"
+    assert restored.config["orchestration_id"] == "meeting-pipeline"
+
+
+def test_event_trigger_serialization():
+    trigger = EventTrigger(event="notetaker.completed")
+    data = trigger.to_dict()
+
+    assert data["type"] == "event"
+    assert data["event"] == "notetaker.completed"
+
+
+def test_manual_trigger_serialization():
+    trigger = ManualTrigger()
+    data = trigger.to_dict()
+
+    assert data["type"] == "manual"

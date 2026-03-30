@@ -15,9 +15,9 @@ class WorkflowExecutor:
     evaluates outgoing edges, and transitions to the next node.
     """
 
-    def __init__(self, graph: Graph) -> None:
+    def __init__(self, graph: Graph, context: WorkflowContext | None = None) -> None:
         self._graph = graph
-        self._context = WorkflowContext()
+        self._context = context or WorkflowContext()
 
     @property
     def context(self) -> WorkflowContext:

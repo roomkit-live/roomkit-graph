@@ -16,6 +16,7 @@ from roomkit_graph.errors import (
 )
 from roomkit_graph.graph import Graph
 from roomkit_graph.nodes.base import Node, NodeType
+from roomkit_graph.orchestration import GraphOrchestration
 from roomkit_graph.registry import FunctionRegistry
 from roomkit_graph.triggers import (
     EventTrigger,
@@ -24,6 +25,9 @@ from roomkit_graph.triggers import (
     Trigger,
     WebhookTrigger,
 )
+
+graph_registry = FunctionRegistry()
+"""Module-level function registry for custom FunctionNode actions."""
 
 __all__ = [
     "__version__",
@@ -45,8 +49,11 @@ __all__ = [
     "WorkflowContext",
     "WorkflowExecutor",
     "TemplateResolver",
+    # Orchestration
+    "GraphOrchestration",
     # Registry
     "FunctionRegistry",
+    "graph_registry",
     # Errors
     "GraphError",
     "GraphValidationError",
