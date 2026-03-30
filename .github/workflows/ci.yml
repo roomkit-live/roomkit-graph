@@ -20,7 +20,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --prerelease=allow
 
       - name: Ruff check
         run: uv run ruff check src/ tests/
@@ -41,7 +41,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --prerelease=allow
 
       - name: Bandit
         run: uv run bandit -r src/ -c pyproject.toml
@@ -59,7 +59,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --prerelease=allow
 
       - name: ty
         run: uv run ty check src/roomkit_graph/
@@ -77,7 +77,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install base package only
-        run: uv venv && uv pip install .
+        run: uv venv && uv pip install . --prerelease=allow
 
       - name: Install pytest
         run: uv pip install pytest pytest-asyncio
@@ -101,7 +101,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --prerelease=allow
 
       - name: Run tests
         run: uv run pytest --cov --cov-report=xml

@@ -23,11 +23,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "roomkit>=0.6",
+    "roomkit>=0.7.0a7",
 ]
-
-[tool.uv.sources]
-roomkit = { path = "../roomkit", editable = true }
 
 [project.optional-dependencies]
 httpx = ["httpx>=0.27"]

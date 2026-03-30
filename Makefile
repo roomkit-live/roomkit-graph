@@ -1,10 +1,10 @@
 .PHONY: install dev lint lint-fix format typecheck security test test-cov check all clean
 
 install:
-	uv sync
+	uv sync --prerelease=allow
 
 dev:
-	uv sync --extra dev
+	uv sync --extra dev --prerelease=allow
 
 lint:
 	uv run ruff check src/ tests/
