@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in RoomKit, please report it responsibly by emailing:
+If you discover a security vulnerability in roomkit-graph, please report it responsibly by emailing:
 
 **sylvainboilydroid@gmail.com**
 

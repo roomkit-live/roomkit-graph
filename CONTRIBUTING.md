@@ -1,13 +1,13 @@
-# Contributing to RoomKit
+# Contributing to roomkit-graph
 
-Thank you for your interest in contributing to RoomKit! This guide will get you from zero to a passing test suite in under five minutes.
+Thank you for your interest in contributing to roomkit-graph! This guide will get you from zero to a passing test suite in under five minutes.
 
 ## Quick Start
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/<you>/roomkit.git
-cd roomkit
+git clone https://github.com/<you>/roomkit-graph.git
+cd roomkit-graph
 
 # 2. Install (requires Python 3.12+ and uv)
 uv sync --extra dev
@@ -27,14 +27,16 @@ Look for issues tagged with these labels:
 | **good first issue** | Small, well-scoped tasks ideal for first-time contributors. Usually a single file change with clear acceptance criteria. |
 | **help wanted** | Larger tasks where we'd welcome community help. May span multiple files but the scope is well-defined. |
 | **docs** | Documentation improvements — great if you want to contribute without touching core code. |
-| **provider** | Adding or improving a provider integration (SMS, Email, Voice, etc.). Self-contained and easy to test in isolation. |
+| **node-type** | Adding or improving a node type implementation. Self-contained and easy to test in isolation. |
 
 If you want to contribute but nothing in the tracker appeals to you, here are areas that always welcome help:
 
-- **New provider integrations** — add support for a new SMS, email, or chat platform
-- **Example scripts** — runnable demos in `examples/` showing real-world usage
-- **Test coverage** — we target 80%+; run `uv run pytest --cov=roomkit --cov-report=term-missing` to find gaps
-- **Documentation** — guides, tutorials, and API doc improvements in `../roomkit-docs/`
+- **New node types** — add support for new workflow step types
+- **Built-in function actions** — expand the FunctionNode action library
+- **Condition operators** — add new comparison operators to the condition DSL
+- **Example workflows** — runnable demos in `examples/` showing real-world usage
+- **Test coverage** — we target 80%+; run `uv run pytest --cov=roomkit_graph --cov-report=term-missing` to find gaps
+- **Documentation** — guides, tutorials, and API doc improvements
 
 ## Development Workflow
 
@@ -48,7 +50,7 @@ If you want to contribute but nothing in the tracker appeals to you, here are ar
 ```bash
 uv run ruff check src/ tests/       # Lint (E/F/I/N/UP/B/SIM rules)
 uv run ruff format --check src/ tests/  # Format check
-uv run mypy src/roomkit/             # Type check (strict)
+uv run mypy src/roomkit_graph/       # Type check (strict)
 uv run bandit -r src/ -c pyproject.toml  # Security scan
 uv run pytest                        # Tests
 ```
@@ -63,7 +65,7 @@ You can run these individually while developing. Use `uv run ruff check --fix` t
 - **All imports at the top** — no inline imports except lazy imports for optional deps behind `try/except ImportError`
 - **Ruff** — 99-char line length, format with `ruff format`
 - **Type hints** on all public methods
-- **Logging** via `logging.getLogger("roomkit.xxx")` — no `print()`
+- **Logging** via `logging.getLogger("roomkit_graph.xxx")` — no `print()`
 
 ## Testing
 
@@ -71,37 +73,43 @@ You can run these individually while developing. Use `uv run ruff check --fix` t
 uv run pytest                              # Run all tests
 uv run pytest tests/test_X.py -v           # Run a specific file
 uv run pytest -k "keyword" -v              # Run by keyword
-uv run pytest --cov=roomkit --cov-report=term-missing  # With coverage
+uv run pytest --cov=roomkit_graph --cov-report=term-missing  # With coverage
 ```
 
 - Framework: **pytest** with `asyncio_mode = "auto"` — no `@pytest.mark.asyncio` needed
-- Use mock providers (`MockVADProvider`, `MockSTTProvider`, etc.) for voice tests
-- Use `make_event()` from `tests/conftest.py` for building test events
+- Use mock RoomKit instances for integration tests
 - Run with `uv run pytest` (not `python -m pytest`)
 
 ## Adding New Features
 
-Every new feature, provider, or channel type **must** include:
+Every new feature or node type **must** include:
 
 1. **Tests** — unit tests covering the happy path and error cases
-2. **Documentation** — update relevant pages in `../roomkit-docs/docs/`
+2. **Documentation** — update the README or relevant docs
 3. **Example** — a runnable script in `examples/` demonstrating the feature
 
-### New Provider Checklist
+### New Node Type Checklist
 
-1. Config in `src/roomkit/providers/<name>/config.py`
-2. Implementation in `src/roomkit/providers/<name>/<type>.py`
-3. Export from `__init__.py` and `src/roomkit/__init__.py`
-4. Tests in `tests/test_providers/test_<name>.py`
-5. Example in `examples/`
-6. Docs update in `../roomkit-docs/`
+1. Implementation in `src/roomkit_graph/nodes/<name>.py`
+2. Register in `NodeType` enum and node registry
+3. Export from `src/roomkit_graph/nodes/__init__.py` and `src/roomkit_graph/__init__.py`
+4. Tests in `tests/test_nodes/test_<name>.py`
+5. Example workflow in `examples/`
+6. README update with usage example
 
-### New Pipeline Stage Checklist
+### New Function Action Checklist
 
-1. ABC in `src/roomkit/voice/pipeline/<stage>/base.py`
-2. Mock in `src/roomkit/voice/pipeline/<stage>/mock.py`
-3. Export from subdirectory and `voice/pipeline/__init__.py`
-4. Tests, example, and docs guide
+1. Implementation in `src/roomkit_graph/nodes/function.py` (action handler)
+2. Register in the built-in action registry
+3. Tests in `tests/test_nodes/test_function.py`
+4. README update with usage example
+
+### New Condition Operator Checklist
+
+1. Implementation in `src/roomkit_graph/edges/condition.py`
+2. Register operator in the condition evaluator
+3. Tests in `tests/test_edges/test_condition.py`
+4. Ensure JSON serialization round-trips correctly
 
 ## Pull Request Guidelines
 
@@ -110,6 +118,7 @@ Every new feature, provider, or channel type **must** include:
 - **All checks must pass** — `make all` is the gate
 - **Add tests** — untested code won't be merged
 - **Don't break public API** — if you need to change a public interface, discuss it in an issue first
+- **Serialization matters** — any new model must round-trip through JSON correctly
 
 ## Getting Help
 
