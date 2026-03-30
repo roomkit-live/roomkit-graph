@@ -21,7 +21,7 @@ from roomkit_graph import (
     TemplateResolver,
     WebhookTrigger,
     WorkflowContext,
-    WorkflowExecutor,
+    WorkflowEngine,
 )
 
 
@@ -104,7 +104,7 @@ async def main() -> None:
         Edge("process", "end"),
     )
 
-    executor = WorkflowExecutor(graph)
+    executor = WorkflowEngine(graph)
     result = await executor.run(trigger_data={"message": "Go!"})
 
     print(f"  Trigger: {result.get('start.output.input')}")
@@ -163,7 +163,7 @@ async def main() -> None:
         Edge("normal", "end"),
     )
 
-    executor2 = WorkflowExecutor(branch_graph)
+    executor2 = WorkflowEngine(branch_graph)
     result2 = await executor2.run(trigger_data={"issue": "Bug report"})
 
     print(f"  Priority: {result2.get('check.output.priority')}")

@@ -1,4 +1,4 @@
-"""Tests for WorkflowExecutor — edge evaluation and execution flow."""
+"""Tests for WorkflowEngine — edge evaluation and execution flow."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from roomkit_graph import (
     ManualTrigger,
     Node,
     WorkflowContext,
-    WorkflowExecutor,
+    WorkflowEngine,
 )
 
 
@@ -52,7 +52,7 @@ def _branching_graph() -> Graph:
 
 def test_evaluate_edges_unconditional():
     g = _linear_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
     executor.context.set("start", {})
 
     next_id = executor.evaluate_edges("start")
@@ -61,7 +61,7 @@ def test_evaluate_edges_unconditional():
 
 def test_evaluate_edges_conditional_match():
     g = _branching_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
     executor.context.set("check", {"severity": "critical"})
 
     next_id = executor.evaluate_edges("check")
@@ -70,7 +70,7 @@ def test_evaluate_edges_conditional_match():
 
 def test_evaluate_edges_otherwise_fallback():
     g = _branching_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
     executor.context.set("check", {"severity": "low"})
 
     next_id = executor.evaluate_edges("check")
@@ -79,7 +79,7 @@ def test_evaluate_edges_otherwise_fallback():
 
 def test_evaluate_edges_end_node_returns_none():
     g = _linear_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
 
     next_id = executor.evaluate_edges("end")
     assert next_id is None
@@ -98,7 +98,7 @@ def test_evaluate_edges_no_match_raises():
         Edge("a", "end", Condition.field("a.output.x").equals("never")),
     )
 
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
     executor.context.set("a", {"x": "something_else"})
 
     from roomkit_graph import NoValidTransitionError
@@ -112,7 +112,7 @@ def test_evaluate_edges_no_match_raises():
 
 async def test_start_sets_initial_state():
     g = _linear_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
 
     await executor.start(trigger_data={"message": "hello"})
 
@@ -123,7 +123,7 @@ async def test_start_sets_initial_state():
 async def test_run_linear_workflow():
     """Full run of a simple linear graph should complete."""
     g = _linear_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
 
     result = await executor.run(trigger_data={"message": "go"})
 
@@ -135,7 +135,7 @@ async def test_run_linear_workflow():
 
 async def test_step_advances():
     g = _linear_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
     await executor.start()
 
     advanced = await executor.step()
@@ -147,7 +147,7 @@ async def test_step_returns_false_at_end():
     g.add_nodes(Node("start", type="start"), Node("end", type="end"))
     g.add_edges(Edge("start", "end"))
 
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
     await executor.start()
 
     # step from start → end
@@ -173,7 +173,7 @@ async def test_resume_after_human_node():
     )
     g.add_edges(Edge("start", "review"), Edge("review", "end"))
 
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
     await executor.start()
     await executor.step()  # start → review (should pause)
 
@@ -187,7 +187,7 @@ async def test_resume_after_human_node():
 
 async def test_step_before_start_returns_false():
     g = _linear_graph()
-    executor = WorkflowExecutor(g)
+    executor = WorkflowEngine(g)
 
     # Stepping before start() should return False (not started)
     advanced = await executor.step()
@@ -199,5 +199,5 @@ async def test_executor_with_injected_context():
     ctx = WorkflowContext()
     ctx.set("start", {"input": "restored"})
 
-    executor = WorkflowExecutor(g, context=ctx)
+    executor = WorkflowEngine(g, context=ctx)
     assert executor.context.get("start.output.input") == "restored"

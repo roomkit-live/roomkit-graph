@@ -11,7 +11,7 @@ from roomkit_graph import (
     TemplateResolver,
     WebhookTrigger,
     WorkflowContext,
-    WorkflowExecutor,
+    WorkflowEngine,
 )
 
 # --- Graph + Condition + Serialization round-trip ---
@@ -176,7 +176,7 @@ async def test_executor_with_injected_context():
     saved = WorkflowContext()
     saved.set("start", {"input": {"data": "original"}})
 
-    executor = WorkflowExecutor(g, context=saved)
+    executor = WorkflowEngine(g, context=saved)
 
     # Context should be the injected one, not a fresh instance
     assert executor.context.get("start.output.input") == {"data": "original"}
