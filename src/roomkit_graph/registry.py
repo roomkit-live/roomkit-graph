@@ -22,20 +22,25 @@ class FunctionRegistry:
             async def calculate_priority(ctx):
                 ...
         """
-        raise NotImplementedError
+
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            self._functions[name] = func
+            return func
+
+        return decorator
 
     def register(self, name: str, func: Callable[..., Any]) -> None:
         """Register a function programmatically."""
-        raise NotImplementedError
+        self._functions[name] = func
 
     def get(self, name: str) -> Callable[..., Any]:
         """Look up a registered function by name. Raises KeyError if not found."""
-        raise NotImplementedError
+        return self._functions[name]
 
     def has(self, name: str) -> bool:
         """Check if a function is registered."""
-        raise NotImplementedError
+        return name in self._functions
 
     def list(self) -> list[str]:
         """Return all registered function names."""
-        raise NotImplementedError
+        return list(self._functions.keys())

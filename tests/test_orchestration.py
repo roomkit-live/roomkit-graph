@@ -18,7 +18,7 @@ def test_graph_orchestration_instantiation():
     assert orch.graph is g
 
 
-def test_graph_orchestration_agents_returns_agent_nodes():
+def test_graph_orchestration_get_agent_node_ids():
     g = Graph(id="test", name="Test", trigger=ManualTrigger())
     g.add_nodes(
         Node("start", type="start"),
@@ -35,7 +35,29 @@ def test_graph_orchestration_agents_returns_agent_nodes():
     )
 
     orch = GraphOrchestration(g)
-    agents = orch.agents()
+    agent_ids = orch.get_agent_node_ids()
 
-    # Should return agents for the 2 agent nodes, not notification or start/end
-    assert len(agents) == 2
+    assert len(agent_ids) == 2
+    assert set(agent_ids) == {"triage", "labeler"}
+
+
+def test_graph_orchestration_agents_returns_injected():
+    """When agents are injected (by Luge), agents() returns them."""
+    g = Graph(id="test", name="Test", trigger=ManualTrigger())
+    g.add_nodes(Node("start", type="start"), Node("end", type="end"))
+    g.add_edges(Edge("start", "end"))
+
+    # Simulate Luge injecting resolved agents
+    mock_agents = ["agent1", "agent2"]  # In reality these are Agent instances
+    orch = GraphOrchestration(g, agents=mock_agents)
+
+    assert orch.agents() == ["agent1", "agent2"]
+
+
+def test_graph_orchestration_agents_empty_by_default():
+    g = Graph(id="test", name="Test", trigger=ManualTrigger())
+    g.add_nodes(Node("start", type="start"), Node("end", type="end"))
+    g.add_edges(Edge("start", "end"))
+
+    orch = GraphOrchestration(g)
+    assert orch.agents() == []

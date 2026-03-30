@@ -52,11 +52,46 @@ class Condition:
 
     def evaluate(self, context: WorkflowContext) -> bool:
         """Evaluate this condition against a WorkflowContext."""
-        raise NotImplementedError
+        return self._evaluate_value(lambda path: context.get(path, _MISSING))
 
     def evaluate_dict(self, context: dict[str, Any]) -> bool:
-        """Evaluate this condition against a raw dict (for standalone use)."""
-        raise NotImplementedError
+        """Evaluate against a raw dict. Missing paths return False (not error)."""
+        return self._evaluate_value(lambda path: _walk_dict(context, path))
+
+    def _evaluate_value(self, resolve: Any) -> bool:
+        """Core evaluation logic — resolve is a callable that maps path → value."""
+        if self.type == "otherwise":
+            return True
+        if self.type == "all":
+            return all(c._evaluate_value(resolve) for c in self.conditions)
+        if self.type == "any":
+            return any(c._evaluate_value(resolve) for c in self.conditions)
+        if self.type == "not":
+            return not self.conditions[0]._evaluate_value(resolve)
+        if self.type == "field":
+            return self._evaluate_field(resolve)
+        return False
+
+    def _evaluate_field(self, resolve: Any) -> bool:
+        """Evaluate a field condition against a resolved value."""
+        value = resolve(self.path) if self.path else _MISSING
+        if value is _MISSING:
+            return False
+        if self.op == "eq":
+            return value == self.value
+        if self.op == "neq":
+            return value != self.value
+        if self.op == "in":
+            return value in self.value
+        if self.op == "not_in":
+            return value not in self.value
+        if self.op == "contains":
+            return self.value in str(value)
+        if self.op == "gt":
+            return value > self.value
+        if self.op == "lt":
+            return value < self.value
+        return self.op == "exists"
 
     # --- Serialization ---
 
@@ -83,6 +118,21 @@ class Condition:
             children = tuple(cls.from_dict(c) for c in data.get("conditions", []))
             return cls(type=ctype, conditions=children)
         return cls(type=ctype)
+
+
+_MISSING = object()
+
+
+def _walk_dict(data: dict[str, Any], path: str) -> Any:
+    """Walk a nested dict by dot-notation path. Returns _MISSING if not found."""
+    parts = path.split(".")
+    current: Any = data
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return _MISSING
+    return current
 
 
 class ConditionBuilder:
