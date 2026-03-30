@@ -1,0 +1,35 @@
+.PHONY: install dev lint lint-fix format typecheck security test test-cov check all clean
+
+install:
+	uv sync
+
+dev:
+	uv sync --extra dev
+
+lint:
+	uv run ruff check src/ tests/
+
+lint-fix:
+	uv run ruff check --fix src/ tests/
+
+format:
+	uv run ruff format src/ tests/
+
+format-check:
+	uv run ruff format --check src/ tests/
+
+typecheck:
+	uv run ty check src/roomkit_graph/
+
+security:
+	uv run bandit -r src/ -c pyproject.toml
+
+test:
+	uv run pytest -v
+
+test-cov:
+	uv run pytest --cov --cov-report=term-missing
+
+check: lint-fix format typecheck security
+
+all: check test
