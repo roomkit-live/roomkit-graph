@@ -32,7 +32,8 @@ class Node:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
-        data: dict[str, Any] = {"id": self.id, "type": self.type.value}
+        type_val = self.type.value if isinstance(self.type, NodeType) else self.type
+        data: dict[str, Any] = {"id": self.id, "type": type_val}
         if self.config:
             data["config"] = self.config
         if self.metadata:

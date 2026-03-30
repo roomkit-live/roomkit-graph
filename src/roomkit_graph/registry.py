@@ -41,6 +41,6 @@ class FunctionRegistry:
         """Check if a function is registered."""
         return name in self._functions
 
-    def list(self) -> list[str]:
+    def list_functions(self) -> list[str]:
         """Return all registered function names."""
         return list(self._functions.keys())

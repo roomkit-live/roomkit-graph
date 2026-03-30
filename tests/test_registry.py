@@ -59,13 +59,13 @@ def test_list_functions():
     registry.register("alpha", a)
     registry.register("beta", b)
 
-    names = registry.list()
+    names = registry.list_functions()
     assert sorted(names) == ["alpha", "beta"]
 
 
 def test_list_empty():
     registry = FunctionRegistry()
-    assert registry.list() == []
+    assert registry.list_functions() == []
 
 
 def test_register_duplicate_overwrites():
