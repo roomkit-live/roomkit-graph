@@ -162,7 +162,7 @@ def test_resolver_dict_with_workflow_context():
 # --- Executor + injectable context (resume scenario) ---
 
 
-async def test_executor_with_injected_context():
+async def test_integration_injected_context():
     """Executor can resume from a previously saved context."""
     g = Graph(id="test", name="Test", trigger=ManualTrigger())
     g.add_nodes(

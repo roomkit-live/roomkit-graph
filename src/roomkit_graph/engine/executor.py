@@ -4,12 +4,14 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit_graph.engine.context import WorkflowContext
 from roomkit_graph.engine.resolver import TemplateResolver
-from roomkit_graph.errors import NoValidTransitionError
+from roomkit_graph.errors import ExecutionError, NoValidTransitionError
 from roomkit_graph.handlers import (
+    ConditionHandler,
     EndHandler,
     FunctionHandler,
     NodeHandler,
     StartHandler,
+    SwitchHandler,
 )
 from roomkit_graph.nodes.base import NodeType
 
@@ -22,14 +24,16 @@ _BUILTIN_HANDLERS: dict[NodeType, NodeHandler] = {
     NodeType.START: StartHandler(),
     NodeType.END: EndHandler(),
     NodeType.FUNCTION: FunctionHandler(),
+    NodeType.CONDITION: ConditionHandler(),
+    NodeType.SWITCH: SwitchHandler(),
 }
 
 
 class WorkflowEngine:
     """Workflow execution engine — drives a graph step by step.
 
-    The engine manages the execution loop: start → execute node → evaluate edges
-    → next node → end. Node execution is delegated to pluggable NodeHandlers.
+    The engine manages the execution loop: start -> execute node -> evaluate edges
+    -> next node -> end. Node execution is delegated to pluggable NodeHandlers.
 
     Built-in handlers cover start, end, and function nodes.
     Consumer apps provide handlers for agent, orchestration, notification, human, etc.
@@ -90,6 +94,7 @@ class WorkflowEngine:
         """Execute the current node and advance to the next.
 
         Returns True if the workflow advanced, False if it's complete or waiting.
+        Raises ExecutionError if a handler fails or no handler is registered.
         """
         if self._current is None:
             return False
@@ -110,21 +115,25 @@ class WorkflowEngine:
 
         # Execute node via handler
         handler = self.get_handler(node.type)
-        if handler:
-            result = await handler.execute(node, self._context, self)
+        if handler is None:
+            msg = f"No handler registered for node type '{node.type}'"
+            raise ExecutionError(msg)
 
-            # Store output in context
-            if result.output is not None:
-                self._context.set(node.id, result.output)
+        result = await handler.execute(node, self._context, self)
 
-            # If node is waiting (human input, approval), pause
-            if result.status == "waiting":
-                self._waiting = True
-                return True
+        # Store output in context
+        if result.output is not None:
+            self._context.set(node.id, result.output)
 
-            # If node failed, stop
-            if result.status == "failed":
-                return False
+        # If node is waiting (human input, approval), pause
+        if result.status == "waiting":
+            self._waiting = True
+            return True
+
+        # If node failed, raise
+        if result.status == "failed":
+            msg = f"Node '{node.id}' failed: {result.error or 'unknown error'}"
+            raise ExecutionError(msg)
 
         # Evaluate edges and advance
         next_id = self.evaluate_edges(self._current)
@@ -144,29 +153,72 @@ class WorkflowEngine:
         return self._context
 
     async def resume(self, node_id: str, input_data: Any) -> None:
-        """Resume a paused workflow (e.g. after human input) with external data."""
+        """Resume a paused workflow (e.g. after human input) with external data.
+
+        Stores the input in context as the node's output, clears the waiting flag,
+        and advances past the waiting node by evaluating outgoing edges.
+        """
         self._context.set(node_id, input_data)
         self._waiting = False
+        # Advance past the waiting node
+        if self._current == node_id:
+            next_id = self.evaluate_edges(node_id)
+            if next_id is not None:
+                self._current = next_id
 
     def evaluate_edges(self, node_id: str) -> str | None:
-        """Evaluate outgoing edges and return the next node ID, or None."""
+        """Evaluate outgoing edges and return the next node ID, or None.
+
+        Priority: conditional edges first, then unconditional, then otherwise.
+        """
         edges = self._graph.get_outgoing_edges(node_id)
         if not edges:
             return None
 
-        # Try conditional edges first, then unconditional, then otherwise
+        # Separate edge types and evaluate conditionals first
         otherwise_edge = None
+        unconditional_edge = None
         for edge in edges:
             if edge.condition is None:
-                return edge.target
+                unconditional_edge = edge
+                continue
             if edge.condition.type == "otherwise":
                 otherwise_edge = edge
                 continue
             if edge.condition.evaluate(self._context):
                 return edge.target
 
+        # Unconditional fallback (default path when no condition matched)
+        if unconditional_edge is not None:
+            return unconditional_edge.target
+
+        # Otherwise fallback (explicit catch-all)
         if otherwise_edge is not None:
             return otherwise_edge.target
 
         msg = f"No valid transition from node '{node_id}'"
         raise NoValidTransitionError(msg)
+
+    # --- Serialization ---
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize engine state for persistence (pause/resume across processes)."""
+        return {
+            "context": self._context.to_dict(),
+            "current_node_id": self._current,
+            "waiting": self._waiting,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        graph: Graph,
+        data: dict[str, Any],
+        handlers: dict[NodeType | str, NodeHandler] | None = None,
+    ) -> WorkflowEngine:
+        """Restore engine from serialized state."""
+        ctx = WorkflowContext.from_dict(data["context"])
+        engine = cls(graph, handlers=handlers, context=ctx)
+        engine._current = data.get("current_node_id")
+        engine._waiting = data.get("waiting", False)
+        return engine

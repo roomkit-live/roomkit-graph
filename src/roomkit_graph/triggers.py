@@ -15,7 +15,10 @@ class Trigger:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
-        return {"type": self.type, **{k: v for k, v in self._extra_fields().items()}}
+        data = {"type": self.type, **{k: v for k, v in self._extra_fields().items()}}
+        if self.config:
+            data["config"] = self.config
+        return data
 
     def _extra_fields(self) -> dict[str, Any]:
         """Subclass-specific fields for serialization."""

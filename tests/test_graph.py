@@ -7,6 +7,7 @@ import pytest
 from roomkit_graph import (
     Edge,
     Graph,
+    GraphValidationError,
     ManualTrigger,
     Node,
 )
@@ -295,3 +296,25 @@ def test_graph_from_dict_with_conditions():
     assert g.edges[1].condition is not None
     assert g.edges[1].condition.type == "field"
     assert g.edges[2].condition.type == "otherwise"
+
+
+# --- validate_or_raise ---
+
+
+def test_validate_or_raise_valid():
+    """validate_or_raise does not raise on a valid graph."""
+    g = Graph(id="ok", name="OK", trigger=ManualTrigger())
+    g.add_nodes(Node("start", type="start"), Node("end", type="end"))
+    g.add_edges(Edge("start", "end"))
+
+    g.validate_or_raise()  # should not raise
+
+
+def test_validate_or_raise_invalid():
+    """validate_or_raise raises GraphValidationError on invalid graph."""
+    g = Graph(id="bad", name="Bad", trigger=ManualTrigger())
+    # No start or end nodes
+    g.add_node(Node("orphan", type="agent"))
+
+    with pytest.raises(GraphValidationError, match="start node"):
+        g.validate_or_raise()

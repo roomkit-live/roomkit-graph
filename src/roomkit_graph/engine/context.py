@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 
@@ -34,8 +35,8 @@ class WorkflowContext:
         return self.get(path, sentinel) is not sentinel
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the full context as a dict."""
-        return dict(self._data)
+        """Return the full context as a deep-copied dict."""
+        return copy.deepcopy(self._data)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkflowContext:

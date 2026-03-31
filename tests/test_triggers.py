@@ -147,3 +147,30 @@ def test_scheduled_trigger_round_trip():
 
     assert isinstance(restored, ScheduledTrigger)
     assert restored.schedule == original.schedule
+
+
+# --- Config round-trip ---
+
+
+def test_trigger_config_round_trip():
+    """Trigger.config survives serialization round-trip."""
+    original = WebhookTrigger(
+        source_type="github",
+        config={"secret": "abc123", "events": ["push", "pr"]},
+    )
+    data = original.to_dict()
+
+    assert "config" in data
+    assert data["config"]["secret"] == "abc123"
+
+    restored = Trigger.from_dict(data)
+    assert isinstance(restored, WebhookTrigger)
+    assert restored.config == original.config
+
+
+def test_trigger_empty_config_not_serialized():
+    """Empty config is omitted from serialized output."""
+    t = ManualTrigger()
+    data = t.to_dict()
+
+    assert "config" not in data

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from roomkit_graph.edges.edge import Edge
+from roomkit_graph.errors import GraphValidationError
 from roomkit_graph.nodes.base import Node, NodeType
 from roomkit_graph.triggers import Trigger
 
@@ -125,6 +126,12 @@ class Graph:
                     errors.append(f"Node '{node.id}' is not reachable from start")
 
         return errors
+
+    def validate_or_raise(self) -> None:
+        """Validate and raise GraphValidationError if the graph is invalid."""
+        errors = self.validate()
+        if errors:
+            raise GraphValidationError("; ".join(errors))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the full graph to a JSON-compatible dict."""

@@ -16,12 +16,14 @@ from roomkit_graph.errors import (
 )
 from roomkit_graph.graph import Graph
 from roomkit_graph.handlers import (
+    ConditionHandler,
     EndHandler,
     FunctionHandler,
     NodeHandler,
     NodeResult,
     StartHandler,
     StepResult,
+    SwitchHandler,
 )
 from roomkit_graph.nodes.base import Node, NodeType
 from roomkit_graph.registry import FunctionRegistry
@@ -63,6 +65,8 @@ __all__ = [
     "StartHandler",
     "EndHandler",
     "FunctionHandler",
+    "ConditionHandler",
+    "SwitchHandler",
     # Registry
     "FunctionRegistry",
     "graph_registry",

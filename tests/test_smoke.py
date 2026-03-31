@@ -68,3 +68,16 @@ def test_graph_registry_is_singleton():
     from roomkit_graph import FunctionRegistry, graph_registry
 
     assert isinstance(graph_registry, FunctionRegistry)
+
+
+def test_custom_node_type_string():
+    """Node accepts custom type strings beyond the NodeType enum."""
+    from roomkit_graph import Node, NodeType
+
+    node = Node("my-node", type="custom_action")
+    assert node.type == "custom_action"
+    assert not isinstance(node.type, NodeType)
+
+    # Known types still coerce to enum
+    node2 = Node("other", type="agent")
+    assert node2.type == NodeType.AGENT

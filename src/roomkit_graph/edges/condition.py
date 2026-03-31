@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from roomkit_graph.errors import ConditionError
 
 if TYPE_CHECKING:
     from roomkit_graph.engine.context import WorkflowContext
@@ -58,7 +61,7 @@ class Condition:
         """Evaluate against a raw dict. Missing paths return False (not error)."""
         return self._evaluate_value(lambda path: _walk_dict(context, path))
 
-    def _evaluate_value(self, resolve: Any) -> bool:
+    def _evaluate_value(self, resolve: Callable[[str], Any]) -> bool:
         """Core evaluation logic — resolve is a callable that maps path → value."""
         if self.type == "otherwise":
             return True
@@ -72,7 +75,7 @@ class Condition:
             return self._evaluate_field(resolve)
         return False
 
-    def _evaluate_field(self, resolve: Any) -> bool:
+    def _evaluate_field(self, resolve: Callable[[str], Any]) -> bool:
         """Evaluate a field condition against a resolved value."""
         value = resolve(self.path) if self.path else _MISSING
         if value is _MISSING:
@@ -91,7 +94,10 @@ class Condition:
             return value > self.value
         if self.op == "lt":
             return value < self.value
-        return self.op == "exists"
+        if self.op == "exists":
+            return True
+        msg = f"Unknown condition operator: '{self.op}'"
+        raise ConditionError(msg)
 
     # --- Serialization ---
 

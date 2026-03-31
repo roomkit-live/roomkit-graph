@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from roomkit_graph import Condition, WorkflowContext
+import pytest
+
+from roomkit_graph import Condition, ConditionError, WorkflowContext
 
 # --- Builder API ---
 
@@ -313,3 +315,27 @@ def test_condition_round_trip():
     assert restored.type == original.type
     assert len(restored.conditions) == len(original.conditions)
     assert restored.to_dict() == data
+
+
+# --- Unknown operator ---
+
+
+def test_unknown_operator_raises_condition_error():
+    """An unrecognized operator raises ConditionError, not silent False."""
+    cond = Condition(type="field", path="x", op="gte", value=10)
+    ctx = WorkflowContext()
+    ctx.set("node", {"x": 20})
+
+    # Evaluate against dict (evaluate_dict)
+    with pytest.raises(ConditionError, match="Unknown condition operator: 'gte'"):
+        cond.evaluate_dict({"x": 20})
+
+
+def test_unknown_operator_raises_with_context():
+    """Unknown operator raises ConditionError against WorkflowContext too."""
+    cond = Condition(type="field", path="node.output.val", op="lte", value=5)
+    ctx = WorkflowContext()
+    ctx.set("node", {"val": 3})
+
+    with pytest.raises(ConditionError, match="Unknown condition operator: 'lte'"):
+        cond.evaluate(ctx)

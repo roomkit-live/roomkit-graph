@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -14,6 +15,8 @@ class NodeType(StrEnum):
     NOTIFICATION = "notification"
     FUNCTION = "function"
     PARALLEL = "parallel"
+    CONDITION = "condition"
+    SWITCH = "switch"
 
 
 @dataclass
@@ -28,7 +31,8 @@ class Node:
 
     def __post_init__(self) -> None:
         if isinstance(self.type, str):
-            self.type = NodeType(self.type)
+            with contextlib.suppress(ValueError):
+                self.type = NodeType(self.type)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
