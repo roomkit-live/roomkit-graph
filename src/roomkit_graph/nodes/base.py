@@ -17,6 +17,7 @@ class NodeType(StrEnum):
     PARALLEL = "parallel"
     CONDITION = "condition"
     SWITCH = "switch"
+    LOG = "log"
 
 
 @dataclass

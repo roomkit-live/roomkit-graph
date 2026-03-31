@@ -160,13 +160,19 @@ class ConditionHandler(NodeHandler):
 
         cond_data = node.config.get("condition")
         if not cond_data or not isinstance(cond_data, dict):
-            return NodeResult(
-                output={"result": False},
-                status="completed",
-            )
+            return NodeResult(output={"result": False}, status="completed")
 
-        cond = Condition.from_dict(cond_data)
-        result = cond.evaluate(context)
+        # Validate required fields before parsing
+        cond_type = cond_data.get("type", "field")
+        if cond_type == "field" and not cond_data.get("path"):
+            return NodeResult(output={"result": False}, status="completed")
+
+        try:
+            cond = Condition.from_dict({**cond_data, "type": cond_type})
+            result = cond.evaluate(context)
+        except (KeyError, TypeError, ValueError):
+            return NodeResult(output={"result": False}, status="completed")
+
         return NodeResult(output={"result": result}, status="completed")
 
 
@@ -193,3 +199,39 @@ class SwitchHandler(NodeHandler):
 
         value = context.get(path)
         return NodeResult(output={"value": value}, status="completed")
+
+
+class LogHandler(NodeHandler):
+    """Built-in handler for log/debug nodes.
+
+    Reads one or more paths from the workflow context and stores them
+    as the node output. Useful for inspecting values flowing through
+    the workflow — output appears in the step log.
+
+    Config:
+        paths: List of dot-notation paths to log (e.g. ["agent-1.output.response"])
+        message: Optional label/message to include in the output
+    """
+
+    async def execute(
+        self, node: Node, context: WorkflowContext, engine: WorkflowEngine  # noqa: ARG002
+    ) -> NodeResult:
+        config = node.config
+        paths = config.get("paths") or []
+        message = config.get("message", "")
+
+        # Resolve each path
+        values: dict[str, Any] = {}
+        for path in paths:
+            values[path] = context.get(path)
+
+        # If no paths, dump the full context
+        if not paths:
+            values = context.to_dict()
+            # Remove internal keys
+            values = {k: v for k, v in values.items() if not k.startswith("_")}
+
+        return NodeResult(
+            output={"message": message, "values": values},
+            status="completed",
+        )

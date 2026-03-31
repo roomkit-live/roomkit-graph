@@ -9,6 +9,7 @@ from roomkit_graph.handlers import (
     ConditionHandler,
     EndHandler,
     FunctionHandler,
+    LogHandler,
     NodeHandler,
     StartHandler,
     SwitchHandler,
@@ -26,6 +27,7 @@ _BUILTIN_HANDLERS: dict[NodeType, NodeHandler] = {
     NodeType.FUNCTION: FunctionHandler(),
     NodeType.CONDITION: ConditionHandler(),
     NodeType.SWITCH: SwitchHandler(),
+    NodeType.LOG: LogHandler(),
 }
 
 
