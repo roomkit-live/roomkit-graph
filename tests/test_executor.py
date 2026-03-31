@@ -455,9 +455,7 @@ async def test_function_handler_custom_action():
     )
     g.add_edges(Edge("start", "compute"), Edge("compute", "end"))
 
-    executor = WorkflowEngine(
-        g, handlers={"function": FunctionHandler(registry=registry)}
-    )
+    executor = WorkflowEngine(g, handlers={"function": FunctionHandler(registry=registry)})
     ctx = await executor.run()
 
     assert ctx.get("compute.output.result") == 42
@@ -479,9 +477,7 @@ async def test_function_handler_custom_sync():
     )
     g.add_edges(Edge("start", "calc"), Edge("calc", "end"))
 
-    executor = WorkflowEngine(
-        g, handlers={"function": FunctionHandler(registry=registry)}
-    )
+    executor = WorkflowEngine(g, handlers={"function": FunctionHandler(registry=registry)})
     ctx = await executor.run()
 
     assert ctx.get("calc.output.value") == 10
@@ -517,9 +513,7 @@ async def test_function_handler_custom_unknown_function():
     )
     g.add_edges(Edge("start", "fn"), Edge("fn", "end"))
 
-    executor = WorkflowEngine(
-        g, handlers={"function": FunctionHandler(registry=registry)}
-    )
+    executor = WorkflowEngine(g, handlers={"function": FunctionHandler(registry=registry)})
     await executor.start()
     await executor.step()  # start → fn
 
