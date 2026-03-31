@@ -28,8 +28,10 @@ Existing workflow engines (n8n, Airflow, Temporal) are full platforms. `roomkit-
 | **Orchestration** | Run a multi-agent strategy (Pipeline, Swarm, Supervisor, Loop) |
 | **Human** | Pause workflow, wait for human input or approval |
 | **Notification** | Send a notification (Slack, email, etc.) and continue |
-| **Function** | Transform data, HTTP calls, delays, or custom Python logic |
+| **Function** | Transform data, delays, or custom Python logic |
 | **Parallel** | Run children concurrently, join when all/any complete |
+| **Condition** | Evaluate a condition and store the boolean result for downstream branching |
+| **Switch** | Read a context value for multi-way branching on outgoing edges |
 
 ## Quick Example
 
@@ -46,7 +48,7 @@ graph.add_nodes(
     Node("start", type="start"),
     Node("triage", type="agent", config={
         "agent_id": "triage-agent",
-        "prompt_template": "Triage this issue. Classify severity.\n\n{{start.input}}"
+        "prompt_template": "Triage this issue. Classify severity.\n\n{{start.output.input}}"
     }),
     Node("escalate", type="notification", config={
         "channel": "slack",
@@ -68,6 +70,75 @@ graph.add_edges(
     Edge("escalate", "end"),
     Edge("assign", "end"),
 )
+
+# Validate before running
+graph.validate_or_raise()
+```
+
+## Running a Workflow
+
+The `WorkflowEngine` drives execution step by step. Built-in handlers cover start, end, function, condition, and switch nodes. Provide handlers for your app-specific node types:
+
+```python
+from roomkit_graph import WorkflowEngine, NodeHandler, NodeResult
+
+class AgentHandler(NodeHandler):
+    async def execute(self, node, context, engine):
+        # Your agent execution logic here
+        result = await call_agent(node.config["agent_id"], context)
+        return NodeResult(output=result, status="completed")
+
+class HumanHandler(NodeHandler):
+    async def execute(self, node, context, engine):
+        return NodeResult(output=None, status="waiting")
+
+# Run to completion
+engine = WorkflowEngine(graph, handlers={
+    "agent": AgentHandler(),
+    "human": HumanHandler(),
+    "notification": NotificationHandler(),
+})
+ctx = await engine.run(trigger_data={"issue_id": "123"})
+```
+
+### Step-by-Step Execution
+
+```python
+engine = WorkflowEngine(graph, handlers=handlers)
+await engine.start(trigger_data={"issue_id": "123"})
+
+while await engine.step():
+    print(f"At node: {engine.current_node_id}")
+```
+
+### Pause and Resume (Human-in-the-Loop)
+
+When a handler returns `status="waiting"`, the engine pauses. Resume with external input:
+
+```python
+# Engine pauses at a human node...
+await engine.resume("review", {"action": "approve", "feedback": "Looks good"})
+
+# resume() stores the input and advances past the waiting node.
+# Call step() to continue execution.
+while await engine.step():
+    pass
+```
+
+### Persist and Restore Engine State
+
+Serialize engine state for cross-process pause/resume (e.g. human-in-the-loop over HTTP):
+
+```python
+# Save
+state = engine.to_dict()
+# state = {"context": {...}, "current_node_id": "review", "waiting": True}
+save_to_db(state)
+
+# Restore later (possibly in a different process)
+state = load_from_db()
+engine = WorkflowEngine.from_dict(graph, state, handlers=handlers)
+await engine.resume("review", {"action": "approve"})
 ```
 
 ## More Examples
@@ -83,12 +154,11 @@ graph.add_nodes(
     Node("start", type="start"),
     Node("draft", type="agent", config={
         "agent_id": "writer-agent",
-        "prompt_template": "Write a blog post about: {{start.input.topic}}"
+        "prompt_template": "Write a blog post about: {{start.output.input.topic}}"
     }),
     Node("review", type="human", config={
         "prompt": "Review this draft. Approve or reject with feedback.",
         "actions": ["approve", "reject"],
-        "timeout": "72h"
     }),
     Node("revise", type="agent", config={
         "agent_id": "writer-agent",
@@ -105,9 +175,9 @@ graph.add_edges(
     Edge("start", "draft"),
     Edge("draft", "review"),
     Edge("review", "publish",
-         condition=Condition.field("review.action").equals("approve")),
+         condition=Condition.field("review.output.action").equals("approve")),
     Edge("review", "revise",
-         condition=Condition.field("review.action").equals("reject")),
+         condition=Condition.field("review.output.action").equals("reject")),
     Edge("revise", "review"),  # loop back
     Edge("publish", "end"),
 )
@@ -142,16 +212,9 @@ graph.add_edges(
 
 ### Function Nodes
 
-Transform data, call APIs, or run custom logic between steps:
+Transform data or run custom logic between steps:
 
 ```python
-# HTTP request
-Node("enrich", type="function", config={
-    "action": "http_request",
-    "method": "GET",
-    "url": "https://api.internal/employees/{{extract.output.id}}"
-})
-
 # Data transform
 Node("reshape", type="function", config={
     "action": "json_transform",
@@ -161,6 +224,12 @@ Node("reshape", type="function", config={
     }
 })
 
+# Set context values
+Node("tag", type="function", config={
+    "action": "set_context",
+    "values": {"status": "in_progress", "assigned": True}
+})
+
 # Delay
 Node("wait", type="function", config={
     "action": "delay",
@@ -168,15 +237,25 @@ Node("wait", type="function", config={
 })
 
 # Custom Python function (registered at runtime)
-@graph_registry.function("calculate_priority")
-async def calculate_priority(ctx: NodeContext) -> dict:
-    severity = ctx.get("triage.output.severity")
-    tier = ctx.get("enrich.output.tier")
+from roomkit_graph import FunctionRegistry, FunctionHandler
+
+registry = FunctionRegistry()
+
+@registry.function("calculate_priority")
+async def calculate_priority(context, config):
+    severity = context.get("triage.output.severity")
+    tier = context.get("enrich.output.tier")
     return {"priority": "P1" if severity == "critical" and tier == "enterprise" else "P2"}
 
 Node("prioritize", type="function", config={
     "action": "custom",
     "function": "calculate_priority"
+})
+
+# Wire registry to the engine
+engine = WorkflowEngine(graph, handlers={
+    "function": FunctionHandler(registry=registry),
+    # ... other handlers
 })
 ```
 
@@ -187,15 +266,15 @@ Serializable condition DSL for edge routing:
 ```python
 # Field comparisons
 Condition.field("triage.output.severity").equals("critical")
-Condition.field("amount").gt(1000)
-Condition.field("tags").contains("urgent")
-Condition.field("status").in_(["approved", "accepted"])
-Condition.field("manager").exists()
+Condition.field("extract.output.amount").gt(1000)
+Condition.field("extract.output.tags").contains("urgent")
+Condition.field("extract.output.status").in_(["approved", "accepted"])
+Condition.field("review.output.manager").exists()
 
 # Composites
 Condition.all_(
-    Condition.field("severity").equals("critical"),
-    Condition.field("team").equals("backend"),
+    Condition.field("triage.output.severity").equals("critical"),
+    Condition.field("triage.output.team").equals("backend"),
 )
 Condition.any_(cond1, cond2)
 Condition.not_(cond)
@@ -209,25 +288,40 @@ All conditions serialize to JSON for storage and UI builders:
 ```json
 {"type": "field", "path": "triage.output.severity", "op": "eq", "value": "critical"}
 {"type": "all", "conditions": [
-    {"type": "field", "path": "amount", "op": "gt", "value": 1000},
-    {"type": "field", "path": "category", "op": "eq", "value": "travel"}
+    {"type": "field", "path": "extract.output.amount", "op": "gt", "value": 1000},
+    {"type": "field", "path": "extract.output.category", "op": "eq", "value": "travel"}
 ]}
 {"type": "otherwise"}
 ```
 
-## How It Works with RoomKit
+## Graph Validation
 
-`roomkit-graph` implements RoomKit's `Orchestration` interface:
+Validate graph structure before execution:
 
 ```python
-from roomkit import RoomKit
-from roomkit_graph import GraphOrchestration
+# Returns list of error strings (empty = valid)
+errors = graph.validate()
 
-orchestration = GraphOrchestration(graph)
-kit = RoomKit(store=store, orchestration=orchestration)
+# Or raise GraphValidationError directly
+graph.validate_or_raise()
 ```
 
-Under the hood:
+Checks performed: single start node, at least one end node, valid edge references, start has no incoming edges, end nodes have no outgoing edges, all nodes reachable from start.
+
+## Cross-Step Context
+
+Steps reference previous outputs with `{{node_id.output.field}}` templates:
+
+```
+{{start.output.input}}               # trigger payload
+{{start.output.input.title}}         # nested field from trigger
+{{triage.output.severity}}           # previous step output
+{{draft.output.title}}               # any upstream node's output
+```
+
+Resolved at runtime from the workflow context before each step executes.
+
+## How It Maps to RoomKit
 
 | roomkit-graph | RoomKit primitive |
 |---|---|
@@ -242,19 +336,6 @@ Under the hood:
 | Transitions | `ConversationRouter` + hooks |
 | Audit trail | Room events |
 | Persistence | `ConversationStore` |
-
-## Cross-Step Context
-
-Steps reference previous outputs with `{{node_id.output.field}}` templates:
-
-```
-{{start.input}}                      # trigger payload
-{{start.input.title}}                # nested field
-{{triage.output.severity}}           # previous step output
-{{parallel.security.output}}         # parallel child output
-```
-
-Resolved at runtime from the workflow context before each step executes.
 
 ## Status
 
