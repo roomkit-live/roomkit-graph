@@ -214,7 +214,10 @@ class LogHandler(NodeHandler):
     """
 
     async def execute(
-        self, node: Node, context: WorkflowContext, engine: WorkflowEngine  # noqa: ARG002
+        self,
+        node: Node,
+        context: WorkflowContext,
+        engine: WorkflowEngine,  # noqa: ARG002
     ) -> NodeResult:
         config = node.config
         paths = [p for p in (config.get("paths") or []) if p]  # skip empty strings
