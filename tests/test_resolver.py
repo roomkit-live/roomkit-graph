@@ -129,3 +129,91 @@ def test_resolve_value_passthrough():
     assert resolver.resolve_value(42) == 42
     assert resolver.resolve_value(True) is True
     assert resolver.resolve_value(None) is None
+
+
+# --- Passthrough mode: single {{path}} returns raw value ---
+
+
+def test_resolve_value_passthrough_dict():
+    """Single placeholder resolving to a dict returns the dict, not str(dict)."""
+    ctx = _ctx_with_data()
+    resolver = TemplateResolver(ctx)
+
+    result = resolver.resolve_value("{{enrich.output.employee}}")
+    assert result == {"name": "Alice", "email": "alice@co.com"}
+    assert isinstance(result, dict)
+
+
+def test_resolve_value_passthrough_int():
+    """Single placeholder resolving to an int returns the int."""
+    ctx = WorkflowContext()
+    ctx.set("calc", {"count": 42})
+    resolver = TemplateResolver(ctx)
+
+    result = resolver.resolve_value("{{calc.output.count}}")
+    assert result == 42
+    assert isinstance(result, int)
+
+
+def test_resolve_value_passthrough_bool():
+    """Single placeholder resolving to a bool returns the bool."""
+    ctx = WorkflowContext()
+    ctx.set("check", {"passed": True})
+    resolver = TemplateResolver(ctx)
+
+    result = resolver.resolve_value("{{check.output.passed}}")
+    assert result is True
+
+
+def test_resolve_value_passthrough_with_whitespace():
+    """Whitespace around the placeholder is tolerated."""
+    ctx = _ctx_with_data()
+    resolver = TemplateResolver(ctx)
+
+    result = resolver.resolve_value("  {{ enrich.output.employee }}  ")
+    assert result == {"name": "Alice", "email": "alice@co.com"}
+
+
+def test_resolve_value_mixed_text_still_stringifies():
+    """Placeholder with surrounding text still returns a string."""
+    ctx = WorkflowContext()
+    ctx.set("calc", {"count": 42})
+    resolver = TemplateResolver(ctx)
+
+    result = resolver.resolve_value("Count: {{calc.output.count}}")
+    assert result == "Count: 42"
+    assert isinstance(result, str)
+
+
+def test_resolve_value_multiple_placeholders_still_stringifies():
+    """Multiple placeholders in one string still returns a string."""
+    ctx = _ctx_with_data()
+    resolver = TemplateResolver(ctx)
+
+    result = resolver.resolve_value("{{triage.output.severity}} in {{triage.output.category}}")
+    assert result == "critical in auth"
+    assert isinstance(result, str)
+
+
+def test_resolve_still_returns_str():
+    """resolve() always returns a string, even for single placeholders."""
+    ctx = WorkflowContext()
+    ctx.set("calc", {"count": 42})
+    resolver = TemplateResolver(ctx)
+
+    result = resolver.resolve("{{calc.output.count}}")
+    assert result == "42"
+    assert isinstance(result, str)
+
+
+def test_resolve_value_passthrough_missing_raises():
+    """Single-placeholder passthrough still raises TemplateError for missing paths."""
+    import pytest
+
+    from roomkit_graph import TemplateError
+
+    ctx = WorkflowContext()
+    resolver = TemplateResolver(ctx)
+
+    with pytest.raises(TemplateError):
+        resolver.resolve_value("{{ghost.output.field}}")

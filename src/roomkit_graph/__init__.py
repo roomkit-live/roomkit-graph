@@ -21,6 +21,7 @@ from roomkit_graph.handlers import (
     FunctionHandler,
     NodeHandler,
     NodeResult,
+    ParallelHandler,
     StartHandler,
     StepResult,
     SwitchHandler,
@@ -67,6 +68,7 @@ __all__ = [
     "FunctionHandler",
     "ConditionHandler",
     "SwitchHandler",
+    "ParallelHandler",
     # Registry
     "FunctionRegistry",
     "graph_registry",

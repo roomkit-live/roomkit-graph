@@ -359,6 +359,28 @@ def test_evaluate_edges_unconditional_when_no_condition_matches():
     assert next_id == "uncond_target"
 
 
+def test_evaluate_edges_first_match_wins():
+    """When multiple conditional edges match, the first one (definition order) wins."""
+    g = Graph(id="first_match", name="FirstMatch", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("a", type="function", config={"action": "set_context", "values": {}}),
+        Node("first_target", type="end"),
+        Node("second_target", type="end"),
+    )
+    # Both conditions match the same value — first-added edge should win
+    g.add_edges(
+        Edge("start", "a"),
+        Edge("a", "first_target", Condition.field("a.output.x").equals("yes")),
+        Edge("a", "second_target", Condition.field("a.output.x").equals("yes")),
+    )
+
+    executor = WorkflowEngine(g)
+    executor.context.set("a", {"x": "yes"})
+
+    assert executor.evaluate_edges("a") == "first_target"
+
+
 # --- Engine state serialization ---
 
 
@@ -518,4 +540,122 @@ async def test_function_handler_custom_unknown_function():
     await executor.step()  # start → fn
 
     with pytest.raises(ExecutionError, match="Unknown custom function"):
+        await executor.step()
+
+
+# --- ParallelHandler ---
+
+
+async def test_parallel_executes_children():
+    """ParallelHandler executes all children and stores outputs in context."""
+
+    class MockAgent(NodeHandler):
+        async def execute(self, node, context, engine):
+            return NodeResult(output={"result": f"done-{node.id}"}, status="completed")
+
+    g = Graph(id="par", name="Par", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("checks", type="parallel", config={"join": "all"}),
+        Node("a", type="agent", config={}, parent="checks"),
+        Node("b", type="agent", config={}, parent="checks"),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "checks"), Edge("checks", "end"))
+
+    executor = WorkflowEngine(g, handlers={"agent": MockAgent()})
+    ctx = await executor.run()
+
+    # Children stored individually
+    assert ctx.get("a.output.result") == "done-a"
+    assert ctx.get("b.output.result") == "done-b"
+    # Parallel node aggregates
+    assert ctx.get("checks.output.a") == {"result": "done-a"}
+    assert ctx.get("checks.output.b") == {"result": "done-b"}
+
+
+async def test_parallel_no_children():
+    """Parallel node with no children returns empty output."""
+    g = Graph(id="empty_par", name="EmptyPar", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("checks", type="parallel"),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "checks"), Edge("checks", "end"))
+
+    executor = WorkflowEngine(g)
+    ctx = await executor.run()
+
+    assert ctx.get("checks.output") == {}
+
+
+async def test_parallel_child_failure():
+    """Parallel node fails if any child handler returns failed."""
+
+    class FailAgent(NodeHandler):
+        async def execute(self, node, context, engine):
+            if node.id == "bad":
+                return NodeResult(output=None, status="failed", error="boom")
+            return NodeResult(output={"ok": True}, status="completed")
+
+    g = Graph(id="par_fail", name="ParFail", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("checks", type="parallel"),
+        Node("good", type="agent", config={}, parent="checks"),
+        Node("bad", type="agent", config={}, parent="checks"),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "checks"), Edge("checks", "end"))
+
+    executor = WorkflowEngine(g, handlers={"agent": FailAgent()})
+    await executor.start()
+    await executor.step()  # start → checks
+
+    with pytest.raises(ExecutionError, match="boom"):
+        await executor.step()  # checks → fails
+
+
+async def test_parallel_missing_child_handler():
+    """Parallel node fails when a child has no registered handler."""
+    g = Graph(id="par_miss", name="ParMiss", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("checks", type="parallel"),
+        Node("child", type="notification", config={}, parent="checks"),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "checks"), Edge("checks", "end"))
+
+    executor = WorkflowEngine(g)
+    await executor.start()
+    await executor.step()  # start → checks
+
+    with pytest.raises(ExecutionError, match="No handler registered for child"):
+        await executor.step()
+
+
+async def test_parallel_child_exception():
+    """Parallel node fails gracefully when a child handler raises."""
+
+    class ExplodingHandler(NodeHandler):
+        async def execute(self, node, context, engine):
+            msg = "unexpected error"
+            raise RuntimeError(msg)
+
+    g = Graph(id="par_exc", name="ParExc", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("checks", type="parallel"),
+        Node("child", type="agent", config={}, parent="checks"),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "checks"), Edge("checks", "end"))
+
+    executor = WorkflowEngine(g, handlers={"agent": ExplodingHandler()})
+    await executor.start()
+    await executor.step()  # start → checks
+
+    with pytest.raises(ExecutionError, match="unexpected error"):
         await executor.step()

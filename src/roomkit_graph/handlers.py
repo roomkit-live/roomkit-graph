@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -238,3 +239,60 @@ class LogHandler(NodeHandler):
             output={"message": message, "values": values},
             status="completed",
         )
+
+
+class ParallelHandler(NodeHandler):
+    """Built-in handler for parallel nodes.
+
+    Executes all child nodes concurrently using ``asyncio.TaskGroup``.
+    Each child is dispatched to its registered handler. Results are
+    aggregated as ``{child_id: output, ...}`` and stored under the
+    parallel node's ID.
+
+    Config:
+        join: Join strategy — ``"all"`` (default) waits for every child.
+              If any child fails or raises, the entire parallel node fails.
+    """
+
+    async def execute(
+        self,
+        node: Node,
+        context: WorkflowContext,
+        engine: WorkflowEngine,
+    ) -> NodeResult:
+        children = engine.graph.get_children(node.id)
+        if not children:
+            return NodeResult(output={}, status="completed")
+
+        results: dict[str, Any] = {}
+        errors: list[str] = []
+
+        async def _run_child(child: Node) -> None:
+            handler = engine.get_handler(child.type)
+            if handler is None:
+                errors.append(f"No handler registered for child '{child.id}' (type={child.type})")
+                return
+            result = await handler.execute(child, context, engine)
+            if result.output is not None:
+                context.set(child.id, result.output)
+            results[child.id] = result.output
+            if result.status == "failed":
+                errors.append(f"Child '{child.id}' failed: {result.error or 'unknown'}")
+            if result.status == "waiting":
+                errors.append(f"Child '{child.id}' returned waiting (not supported in parallel)")
+
+        try:
+            async with asyncio.TaskGroup() as tg:
+                for child in children:
+                    tg.create_task(_run_child(child))
+        except ExceptionGroup as eg:
+            return NodeResult(
+                output=results,
+                status="failed",
+                error="; ".join(str(e) for e in eg.exceptions),
+            )
+
+        if errors:
+            return NodeResult(output=results, status="failed", error="; ".join(errors))
+
+        return NodeResult(output=results, status="completed")

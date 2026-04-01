@@ -11,6 +11,7 @@ from roomkit_graph.handlers import (
     FunctionHandler,
     LogHandler,
     NodeHandler,
+    ParallelHandler,
     StartHandler,
     SwitchHandler,
 )
@@ -28,6 +29,7 @@ _BUILTIN_HANDLERS: dict[NodeType, NodeHandler] = {
     NodeType.CONDITION: ConditionHandler(),
     NodeType.SWITCH: SwitchHandler(),
     NodeType.LOG: LogHandler(),
+    NodeType.PARALLEL: ParallelHandler(),
 }
 
 
@@ -171,7 +173,23 @@ class WorkflowEngine:
     def evaluate_edges(self, node_id: str) -> str | None:
         """Evaluate outgoing edges and return the next node ID, or None.
 
-        Priority: conditional edges first, then unconditional, then otherwise.
+        Resolution order (first-match-wins):
+
+        1. **Conditional edges** are evaluated in definition order (the order
+           they were added to the graph). The *first* edge whose condition
+           evaluates to True wins — remaining conditionals are skipped.
+        2. **Unconditional edge** (no condition) is used as a default path
+           when no conditional edge matched.
+        3. **Otherwise edge** (condition.type == "otherwise") is the explicit
+           catch-all fallback.
+
+        If none of the above produce a target, raises NoValidTransitionError.
+
+        Args:
+            node_id: The source node whose outgoing edges to evaluate.
+
+        Returns:
+            The ID of the next node, or None if the node has no outgoing edges.
         """
         edges = self._graph.get_outgoing_edges(node_id)
         if not edges:

@@ -7,6 +7,9 @@ from roomkit_graph.engine.context import WorkflowContext
 from roomkit_graph.errors import TemplateError
 
 _PLACEHOLDER = re.compile(r"\{\{(.+?)\}\}")
+# Matches a string that is exactly one {{path}} placeholder (with optional whitespace).
+# Uses [^{}]+ to prevent matching "{{a}}{{b}}" as a single placeholder.
+_EXACT_PLACEHOLDER = re.compile(r"\A\s*\{\{([^{}]+)\}\}\s*\Z")
 
 
 class TemplateResolver:
@@ -16,7 +19,11 @@ class TemplateResolver:
         self._context = context
 
     def resolve(self, template: str) -> str:
-        """Resolve all {{...}} placeholders in a string template."""
+        """Resolve all {{...}} placeholders in a string template.
+
+        Always returns a string. For raw value passthrough when the
+        template is a single placeholder, use resolve_value() instead.
+        """
         _missing = object()
 
         def _replace(match: re.Match[str]) -> str:
@@ -34,8 +41,23 @@ class TemplateResolver:
         return {k: self.resolve_value(v) for k, v in data.items()}
 
     def resolve_value(self, value: Any) -> Any:
-        """Resolve templates in any value (str, dict, list, or passthrough)."""
+        """Resolve templates in any value (str, dict, list, or passthrough).
+
+        When a string is exactly a single ``{{path}}`` placeholder with no
+        surrounding text, returns the raw context value (dict, list, int, etc.)
+        without stringifying. Mixed templates like ``"Count: {{path}}"`` still
+        return a string via resolve().
+        """
         if isinstance(value, str):
+            match = _EXACT_PLACEHOLDER.fullmatch(value)
+            if match:
+                path = match.group(1).strip()
+                _missing = object()
+                raw = self._context.get(path, _missing)
+                if raw is _missing:
+                    msg = f"Template path not found: {path}"
+                    raise TemplateError(msg)
+                return raw
             return self.resolve(value)
         if isinstance(value, dict):
             return self.resolve_dict(value)
