@@ -42,5 +42,5 @@ class WorkflowContext:
     def from_dict(cls, data: dict[str, Any]) -> WorkflowContext:
         """Restore context from a dict."""
         ctx = cls()
-        ctx._data = dict(data)
+        ctx._data = copy.deepcopy(data)
         return ctx
