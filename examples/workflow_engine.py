@@ -18,6 +18,8 @@ from roomkit_graph import (
     Graph,
     ManualTrigger,
     Node,
+    NodeHandler,
+    NodeResult,
     TemplateResolver,
     WebhookTrigger,
     WorkflowContext,
@@ -170,6 +172,59 @@ async def main() -> None:
     print(f"  Route:    {result2.get('urgent.output.route', result2.get('normal.output.route'))}")
     print(f"  Took urgent path: {result2.has('urgent.output')}")
     print(f"  Took normal path: {result2.has('normal.output')}")
+    print()
+
+    # --- 5. Parallel execution --------------------------------------------------
+    print("=== Parallel Execution ===\n")
+
+    class CheckHandler(NodeHandler):
+        """Mock handler that simulates a check."""
+
+        async def execute(self, node, context, engine):
+            return NodeResult(
+                output={"passed": True, "detail": f"{node.id} completed"},
+                status="completed",
+            )
+
+    par_graph = Graph(id="parallel-demo", name="Parallel Demo", trigger=ManualTrigger())
+    par_graph.add_nodes(
+        Node("start", type="start"),
+        Node("checks", type="parallel", config={"join": "all"}),
+        Node("security", type="agent", config={}, parent="checks"),
+        Node("compliance", type="agent", config={}, parent="checks"),
+        Node("end", type="end"),
+    )
+    par_graph.add_edges(
+        Edge("start", "checks"),
+        Edge("checks", "end"),
+    )
+
+    executor3 = WorkflowEngine(par_graph, handlers={"agent": CheckHandler()})
+    result3 = await executor3.run()
+
+    print(f"  Security:   {result3.get('security.output')}")
+    print(f"  Compliance: {result3.get('compliance.output')}")
+    print(f"  Aggregate:  {result3.get('checks.output')}")
+    print()
+
+    # --- 6. Template passthrough ------------------------------------------------
+    print("=== Template Passthrough ===\n")
+
+    ctx2 = WorkflowContext()
+    ctx2.set("enrich", {"employee": {"name": "Alice", "role": "Engineer"}, "count": 42})
+    resolver2 = TemplateResolver(ctx2)
+
+    # Single placeholder → raw value (dict passthrough)
+    raw_dict = resolver2.resolve_value("{{enrich.output.employee}}")
+    print(f"  Passthrough dict: {raw_dict} (type={type(raw_dict).__name__})")
+
+    # Single placeholder → raw value (int passthrough)
+    raw_int = resolver2.resolve_value("{{enrich.output.count}}")
+    print(f"  Passthrough int:  {raw_int} (type={type(raw_int).__name__})")
+
+    # Mixed text → string interpolation (as before)
+    mixed = resolver2.resolve_value("Employee: {{enrich.output.employee.name}}")
+    print(f"  Mixed text:       {mixed} (type={type(mixed).__name__})")
 
 
 if __name__ == "__main__":

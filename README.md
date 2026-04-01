@@ -77,7 +77,7 @@ graph.validate_or_raise()
 
 ## Running a Workflow
 
-The `WorkflowEngine` drives execution step by step. Built-in handlers cover start, end, function, condition, and switch nodes. Provide handlers for your app-specific node types:
+The `WorkflowEngine` drives execution step by step. Built-in handlers cover start, end, function, condition, switch, log, and parallel nodes. Provide handlers for your app-specific node types:
 
 ```python
 from roomkit_graph import WorkflowEngine, NodeHandler, NodeResult
@@ -185,7 +185,7 @@ graph.add_edges(
 
 ### Parallel Execution
 
-Run multiple steps concurrently and join:
+Run multiple steps concurrently and join. The built-in `ParallelHandler` executes all child nodes via `asyncio.TaskGroup` and aggregates results as `{child_id: output}`:
 
 ```python
 graph.add_nodes(
@@ -208,6 +208,11 @@ graph.add_edges(
     Edge("checks", "summarize"),
     Edge("summarize", "end"),
 )
+
+# After execution, each child's output is in context:
+#   ctx.get("security.output")    → individual child result
+#   ctx.get("compliance.output")  → individual child result
+#   ctx.get("checks.output")      → {"security": ..., "compliance": ..., "notify": ...}
 ```
 
 ### Function Nodes
@@ -283,6 +288,8 @@ Condition.not_(cond)
 Condition.otherwise()
 ```
 
+**Edge evaluation order (first-match-wins):** When a node has multiple outgoing edges, conditional edges are evaluated in definition order — the first match wins. If no condition matches, an unconditional edge is used as default. An `otherwise` edge acts as an explicit catch-all.
+
 All conditions serialize to JSON for storage and UI builders:
 
 ```json
@@ -320,6 +327,18 @@ Steps reference previous outputs with `{{node_id.output.field}}` templates:
 ```
 
 Resolved at runtime from the workflow context before each step executes.
+
+### Structured Passthrough
+
+When using `resolve_value()` (e.g. in `json_transform`), a template that is exactly one `{{path}}` placeholder returns the raw value — dicts, lists, ints, bools pass through without stringification:
+
+```python
+# If triage.output.metadata is {"tags": ["auth", "login"], "priority": 1}
+resolve_value("{{triage.output.metadata}}")        # → dict (raw)
+resolve_value("Meta: {{triage.output.metadata}}")  # → "Meta: {'tags': ...}" (string)
+```
+
+This enables passing structured objects between steps without losing type information.
 
 ## How It Maps to RoomKit
 
