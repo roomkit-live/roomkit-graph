@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from roomkit_graph.registry import FunctionRegistry
 
 from roomkit_graph.engine.context import WorkflowContext
+from roomkit_graph.engine.streaming import _current_node_var
 
 
 @dataclass
@@ -272,7 +273,13 @@ class ParallelHandler(NodeHandler):
             if handler is None:
                 errors.append(f"No handler registered for child '{child.id}' (type={child.type})")
                 return
-            result = await handler.execute(child, context, engine)
+            # Scope the task-local current-node id so engine.emit() inside the
+            # child attributes custom events to the child, not the parallel parent.
+            token = _current_node_var.set(child.id)
+            try:
+                result = await handler.execute(child, context, engine)
+            finally:
+                _current_node_var.reset(token)
             if result.output is not None:
                 context.set(child.id, result.output)
             results[child.id] = result.output

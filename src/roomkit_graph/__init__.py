@@ -6,6 +6,7 @@ from roomkit_graph.edges.edge import Edge
 from roomkit_graph.engine.context import WorkflowContext
 from roomkit_graph.engine.executor import WorkflowEngine
 from roomkit_graph.engine.resolver import TemplateResolver
+from roomkit_graph.engine.streaming import StreamEvent, StreamMode
 from roomkit_graph.errors import (
     ConditionError,
     ExecutionError,
@@ -59,6 +60,8 @@ __all__ = [
     "WorkflowContext",
     "WorkflowEngine",
     "TemplateResolver",
+    "StreamMode",
+    "StreamEvent",
     # Handlers
     "NodeHandler",
     "NodeResult",
