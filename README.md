@@ -141,6 +141,38 @@ engine = WorkflowEngine.from_dict(graph, state, handlers=handlers)
 await engine.resume("review", {"action": "approve"})
 ```
 
+### Streaming Execution Events
+
+`engine.stream()` yields typed events as the workflow runs — progress for dashboards, webhooks, or audit logs without mutating the graph. Pick one or more modes:
+
+| Mode | Emitted when | Payload |
+|---|---|---|
+| `values` | Before start + after each step | Full context snapshot |
+| `updates` | After each step | Delta keyed by node_id written that step |
+| `node` | Before and after each node | `{phase, node_id, status}` (status: `completed` / `waiting` / `failed`) |
+| `custom` | When a handler calls `engine.emit(...)` | Handler-defined payload |
+
+```python
+async for event in engine.stream(trigger_data, modes=("updates", "node")):
+    if event["mode"] == "node" and event["payload"]["phase"] == "start":
+        print(f"→ {event['node_id']}")
+    elif event["mode"] == "updates":
+        await websocket.send_json(event["payload"])
+```
+
+Handlers can emit intra-node progress via `engine.emit(payload)`. Outside a `stream()` context the call is a no-op, so handlers stay agnostic to execution mode:
+
+```python
+class LLMAgentHandler(NodeHandler):
+    async def execute(self, node, context, engine):
+        for call in tool_calls:
+            engine.emit({"kind": "tool_call", "tool": call.name})
+            ...
+        return NodeResult(output={"response": ...}, status="completed")
+```
+
+On handler failure, a final `node` event with `status="failed"` is yielded before `ExecutionError` propagates through the iterator. On `waiting`, the stream terminates cleanly — resume via `engine.resume(...)` then start a fresh `stream()`.
+
 ## More Examples
 
 ### Content Review with Human-in-the-Loop
