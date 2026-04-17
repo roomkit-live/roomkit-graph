@@ -29,6 +29,11 @@ class WorkflowContext:
 
         Safe to call when no writes have occurred — returns an empty list.
         The journal is transient and not part of to_dict/from_dict.
+
+        Note: tracks writes only. ``WorkflowContext`` has no delete API, so
+        observers of the journal can assume keys are added or overwritten,
+        never removed. If deletion is ever introduced, observers relying on
+        the journal for deltas will need updating.
         """
         writes = self._writes
         self._writes = []

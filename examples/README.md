@@ -14,3 +14,4 @@ uv run python examples/<example>.py
 |---------|---------|-------------|
 | `graph_definition.py` | Graph, Validation, Serialization | Build a bug triage workflow with branching, validate, serialize to JSON and round-trip |
 | `workflow_engine.py` | Conditions, Templates, Execution | Evaluate conditions, resolve templates, run linear and branching workflows |
+| `streaming.py` | Observer-side streaming | Watch a workflow via `stream()` in all four modes + handler `emit()` for intra-node progress |

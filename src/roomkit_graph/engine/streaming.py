@@ -18,12 +18,12 @@ if TYPE_CHECKING:
     from roomkit_graph.engine.context import WorkflowContext
     from roomkit_graph.graph import Graph
 
-StreamMode = Literal["values", "updates", "node", "custom"]
+StreamMode = Literal["values", "updates", "lifecycle", "custom"]
 """Which view of execution to emit.
 
 - ``values``: full context snapshot before start + after each step (expensive)
 - ``updates``: compact delta keyed by node_id written that step
-- ``node``: lifecycle events (``phase="start"`` / ``phase="complete"``)
+- ``lifecycle``: per-node start/complete events (``phase="start"`` / ``phase="complete"``)
 - ``custom``: handler-emitted events via ``engine.emit(...)``
 """
 
@@ -114,7 +114,7 @@ class _StreamingMixin:
         self._stream_buffer.clear()
         return out
 
-    def _node_complete_event(self, node_id: str, *, failed: bool) -> StreamEvent:
+    def _lifecycle_complete_event(self, node_id: str, *, failed: bool) -> StreamEvent:
         if failed:
             status = "failed"
         elif self._waiting:
@@ -122,7 +122,7 @@ class _StreamingMixin:
         else:
             status = "completed"
         return self._make_event(
-            "node",
+            "lifecycle",
             {"phase": "complete", "node_id": node_id, "status": status},
             node_id=node_id,
         )
@@ -140,11 +140,15 @@ class _StreamingMixin:
         a stream is already active raises RuntimeError.
 
         Event ordering per step:
-            1. node (phase="start")
+            1. lifecycle (phase="start")
             2. any custom events emitted by the handler
-            3. node (phase="complete", status=completed|waiting|failed)
+            3. lifecycle (phase="complete", status=completed|waiting|failed)
             4. updates (delta of node_ids written this step)
             5. values (full snapshot)
+
+        The initial ``values`` event (yielded before the first step) contains
+        the context already seeded by ``start()`` with the trigger data — it
+        is not an empty snapshot.
 
         Args:
             trigger_data: Input passed to the start node (same as ``run()``).
@@ -152,7 +156,7 @@ class _StreamingMixin:
 
         Yields:
             StreamEvent dicts. Errors from handlers propagate through the
-            iterator after a final ``node`` complete event is yielded.
+            iterator after a final ``lifecycle`` complete event is yielded.
         """
         if self._stream_buffer is not None:
             msg = "stream() is single-shot; a stream is already active on this engine"
@@ -175,9 +179,9 @@ class _StreamingMixin:
                     break
                 node = self._graph.get_node(node_id)
 
-                if "node" in mode_set:
+                if "lifecycle" in mode_set:
                     yield self._make_event(
-                        "node",
+                        "lifecycle",
                         {"phase": "start", "node_id": node_id, "type": str(node.type)},
                         node_id=node_id,
                     )
@@ -194,8 +198,8 @@ class _StreamingMixin:
                     _current_node_var.reset(token)
                     for ev in self._drain_custom(mode_set):
                         yield ev
-                    if "node" in mode_set:
-                        yield self._node_complete_event(node_id, failed=failed)
+                    if "lifecycle" in mode_set:
+                        yield self._lifecycle_complete_event(node_id, failed=failed)
 
                 written = self._context.drain_writes()
                 if "updates" in mode_set and written:

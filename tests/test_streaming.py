@@ -99,14 +99,14 @@ async def test_stream_updates_emits_deltas() -> None:
     assert events[1]["payload"]["work"] == {"output": {"done": True}}
 
 
-# --- node mode ---
+# --- lifecycle mode ---
 
 
-async def test_stream_node_phases() -> None:
+async def test_stream_lifecycle_phases() -> None:
     g = _linear_graph()
     engine = WorkflowEngine(g)
 
-    events = [e async for e in engine.stream(modes=("node",))]
+    events = [e async for e in engine.stream(modes=("lifecycle",))]
 
     # Every step emits start + complete — three steps: start, work, end
     phases = [(e["node_id"], e["payload"]["phase"]) for e in events]
@@ -162,22 +162,24 @@ async def test_stream_multi_mode_ordering() -> None:
 
     engine = WorkflowEngine(g, handlers={"agent": _EmittingHandler([{"progress": 1}])})
 
-    events = [e async for e in engine.stream(modes=("values", "updates", "node", "custom"))]
+    events = [e async for e in engine.stream(modes=("values", "updates", "lifecycle", "custom"))]
 
     # Find the agent step — within it, ordering must be:
-    # node:start, custom, node:complete, updates, values
-    # Locate by finding node:start for "agent"
+    # lifecycle:start, custom, lifecycle:complete, updates, values
+    # Locate by finding lifecycle:start for "agent"
     agent_idx = next(
         i
         for i, e in enumerate(events)
-        if e["mode"] == "node" and e["node_id"] == "agent" and e["payload"]["phase"] == "start"
+        if e["mode"] == "lifecycle"
+        and e["node_id"] == "agent"
+        and e["payload"]["phase"] == "start"
     )
     slice_modes = [e["mode"] for e in events[agent_idx : agent_idx + 5]]
     slice_detail = [
-        e["payload"].get("phase") if e["mode"] == "node" else None
+        e["payload"].get("phase") if e["mode"] == "lifecycle" else None
         for e in events[agent_idx : agent_idx + 5]
     ]
-    assert slice_modes == ["node", "custom", "node", "updates", "values"]
+    assert slice_modes == ["lifecycle", "custom", "lifecycle", "updates", "values"]
     assert slice_detail[0] == "start"
     assert slice_detail[2] == "complete"
 
@@ -198,11 +200,11 @@ async def test_stream_propagates_execution_error() -> None:
 
     collected = []
     with pytest.raises(ExecutionError):
-        async for e in engine.stream(modes=("node",)):
+        async for e in engine.stream(modes=("lifecycle",)):
             collected.append(e)
 
-    # Last event before the exception should be node:complete status=failed
-    assert collected[-1]["mode"] == "node"
+    # Last event before the exception should be lifecycle:complete status=failed
+    assert collected[-1]["mode"] == "lifecycle"
     assert collected[-1]["payload"] == {
         "phase": "complete",
         "node_id": "bad",
@@ -224,10 +226,10 @@ async def test_stream_pauses_on_waiting() -> None:
 
     engine = WorkflowEngine(g, handlers={"human": _WaitingHandler()})
 
-    events = [e async for e in engine.stream(modes=("node",))]
+    events = [e async for e in engine.stream(modes=("lifecycle",))]
 
     # Stream terminates cleanly with human's complete event as the last one
-    assert events[-1]["mode"] == "node"
+    assert events[-1]["mode"] == "lifecycle"
     assert events[-1]["node_id"] == "human"
     assert events[-1]["payload"] == {
         "phase": "complete",
@@ -265,7 +267,7 @@ async def test_stream_seq_is_monotonic() -> None:
 
     engine = WorkflowEngine(g, handlers={"agent": _EmittingHandler([{"a": 1}, {"b": 2}])})
 
-    events = [e async for e in engine.stream(modes=("values", "updates", "node", "custom"))]
+    events = [e async for e in engine.stream(modes=("values", "updates", "lifecycle", "custom"))]
 
     seqs = [e["seq"] for e in events]
     assert seqs == sorted(seqs)

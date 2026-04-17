@@ -149,12 +149,12 @@ await engine.resume("review", {"action": "approve"})
 |---|---|---|
 | `values` | Before start + after each step | Full context snapshot |
 | `updates` | After each step | Delta keyed by node_id written that step |
-| `node` | Before and after each node | `{phase, node_id, status}` (status: `completed` / `waiting` / `failed`) |
+| `lifecycle` | Before and after each node | `{phase, node_id, status}` (status: `completed` / `waiting` / `failed`) |
 | `custom` | When a handler calls `engine.emit(...)` | Handler-defined payload |
 
 ```python
-async for event in engine.stream(trigger_data, modes=("updates", "node")):
-    if event["mode"] == "node" and event["payload"]["phase"] == "start":
+async for event in engine.stream(trigger_data, modes=("updates", "lifecycle")):
+    if event["mode"] == "lifecycle" and event["payload"]["phase"] == "start":
         print(f"→ {event['node_id']}")
     elif event["mode"] == "updates":
         await websocket.send_json(event["payload"])
@@ -171,7 +171,7 @@ class LLMAgentHandler(NodeHandler):
         return NodeResult(output={"response": ...}, status="completed")
 ```
 
-On handler failure, a final `node` event with `status="failed"` is yielded before `ExecutionError` propagates through the iterator. On `waiting`, the stream terminates cleanly — resume via `engine.resume(...)` then start a fresh `stream()`.
+On handler failure, a final `lifecycle` event with `status="failed"` is yielded before `ExecutionError` propagates through the iterator. On `waiting`, the stream terminates cleanly — resume via `engine.resume(...)` then start a fresh `stream()`.
 
 ## More Examples
 
