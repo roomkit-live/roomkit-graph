@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterable
 from typing import TYPE_CHECKING, Any
 
 from roomkit_graph.engine.context import WorkflowContext
 from roomkit_graph.engine.resolver import TemplateResolver
-from roomkit_graph.engine.streaming import (
-    StreamEvent,
-    StreamMode,
-    _current_node_var,
-)
+from roomkit_graph.engine.streaming import _StreamingMixin
 from roomkit_graph.errors import ExecutionError, NoValidTransitionError
 from roomkit_graph.handlers import (
     ConditionHandler,
@@ -39,7 +34,7 @@ _BUILTIN_HANDLERS: dict[NodeType, NodeHandler] = {
 }
 
 
-class WorkflowEngine:
+class WorkflowEngine(_StreamingMixin):
     """Workflow execution engine — drives a graph step by step.
 
     The engine manages the execution loop: start -> execute node -> evaluate edges
@@ -47,6 +42,9 @@ class WorkflowEngine:
 
     Built-in handlers cover start, end, and function nodes.
     Consumer apps provide handlers for agent, orchestration, notification, human, etc.
+
+    Observer-side streaming (``stream()`` / ``emit()``) comes from
+    ``_StreamingMixin``; see ``engine/streaming.py``.
     """
 
     def __init__(
@@ -63,8 +61,6 @@ class WorkflowEngine:
         self._current: str | None = None
         self._waiting: bool = False
         self._template_resolver: TemplateResolver | None = None
-        self._stream_buffer: list[StreamEvent] | None = None
-        self._stream_seq: int = 0
 
     @property
     def graph(self) -> Graph:
@@ -163,159 +159,6 @@ class WorkflowEngine:
         while await self.step():
             pass
         return self._context
-
-    # --- Streaming ---
-
-    def emit(self, payload: Any) -> None:
-        """Emit a custom stream event from within a handler.
-
-        Attributes the event to the currently executing node via a task-local
-        ContextVar so parallel children are attributed correctly. Outside a
-        ``stream()`` context this is a no-op, so handlers can call it
-        unconditionally regardless of whether streaming is active.
-        """
-        if self._stream_buffer is None:
-            return
-        node_id = _current_node_var.get() or self._current
-        self._stream_buffer.append(
-            {
-                "mode": "custom",
-                "payload": payload,
-                "node_id": node_id,
-                "seq": self._next_seq(),
-            }
-        )
-
-    def _next_seq(self) -> int:
-        seq = self._stream_seq
-        self._stream_seq += 1
-        return seq
-
-    def _make_event(
-        self,
-        mode: StreamMode,
-        payload: Any,
-        *,
-        node_id: str | None = None,
-    ) -> StreamEvent:
-        return {
-            "mode": mode,
-            "payload": payload,
-            "node_id": node_id,
-            "seq": self._next_seq(),
-        }
-
-    async def stream(
-        self,
-        trigger_data: dict[str, Any] | None = None,
-        *,
-        modes: Iterable[StreamMode] = ("updates",),
-    ) -> AsyncIterator[StreamEvent]:
-        """Run the workflow and yield typed events as it executes.
-
-        Drives the same start/step loop as ``run()`` but yields events at
-        well-defined points. Single-shot per engine instance; calling while a
-        stream is already active raises RuntimeError.
-
-        Event ordering per step:
-            1. node (phase="start")
-            2. any custom events emitted by the handler
-            3. node (phase="complete", status=completed|waiting|failed)
-            4. updates (delta of node_ids written this step)
-            5. values (full snapshot)
-
-        Args:
-            trigger_data: Input passed to the start node (same as ``run()``).
-            modes: Which event modes to emit. Defaults to ``("updates",)``.
-
-        Yields:
-            StreamEvent dicts. Errors from handlers propagate through the
-            iterator after a final ``node`` complete event is yielded.
-        """
-        if self._stream_buffer is not None:
-            msg = "stream() is single-shot; a stream is already active on this engine"
-            raise RuntimeError(msg)
-
-        mode_set = set(modes)
-        self._stream_buffer = []
-        self._stream_seq = 0
-
-        try:
-            await self.start(trigger_data)
-            # Drop any writes from start() so the first step's delta is clean.
-            self._context.drain_writes()
-
-            if "values" in mode_set:
-                yield self._make_event("values", self._context.to_dict())
-
-            while True:
-                node_id = self._current
-                if node_id is None:
-                    break
-                node = self._graph.get_node(node_id)
-
-                if "node" in mode_set:
-                    yield self._make_event(
-                        "node",
-                        {
-                            "phase": "start",
-                            "node_id": node_id,
-                            "type": str(node.type),
-                        },
-                        node_id=node_id,
-                    )
-
-                token = _current_node_var.set(node_id)
-                failed = False
-                try:
-                    try:
-                        advanced = await self.step()
-                    except ExecutionError:
-                        failed = True
-                        raise
-                finally:
-                    _current_node_var.reset(token)
-
-                    # Drain custom events emitted during execute(), regardless
-                    # of whether the step succeeded — handlers may emit progress
-                    # up to the point of failure.
-                    for ev in self._stream_buffer:
-                        if ev["mode"] in mode_set:
-                            yield ev
-                    self._stream_buffer.clear()
-
-                    if "node" in mode_set:
-                        if failed:
-                            status = "failed"
-                        elif self._waiting:
-                            status = "waiting"
-                        else:
-                            status = "completed"
-                        yield self._make_event(
-                            "node",
-                            {
-                                "phase": "complete",
-                                "node_id": node_id,
-                                "status": status,
-                            },
-                            node_id=node_id,
-                        )
-
-                if "updates" in mode_set:
-                    written = self._context.drain_writes()
-                    if written:
-                        delta = {nid: self._context.get(nid) for nid in dict.fromkeys(written)}
-                        yield self._make_event("updates", delta, node_id=node_id)
-                else:
-                    self._context.drain_writes()
-
-                if "values" in mode_set:
-                    yield self._make_event("values", self._context.to_dict())
-
-                if not advanced or self._waiting:
-                    break
-        finally:
-            self._stream_buffer = None
 
     async def resume(self, node_id: str, input_data: Any) -> None:
         """Resume a paused workflow (e.g. after human input) with external data.
