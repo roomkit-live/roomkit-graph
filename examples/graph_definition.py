@@ -34,7 +34,7 @@ async def main() -> None:
                 "prompt_template": (
                     "Triage this GitHub issue. "
                     "Classify severity (critical/high/medium/low) and category.\n\n"
-                    "{{start.input}}"
+                    "{{start.output.input}}"
                 ),
             },
         ),
