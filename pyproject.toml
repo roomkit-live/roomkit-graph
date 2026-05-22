@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Sylvain Boily", email = "sylvainboilydroid@gmail.com" }]
 keywords = ["workflow", "graph", "roomkit", "ai", "orchestration", "async", "agents"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
