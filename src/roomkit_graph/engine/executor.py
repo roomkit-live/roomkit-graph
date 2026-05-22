@@ -40,8 +40,9 @@ class WorkflowEngine(_StreamingMixin):
     The engine manages the execution loop: start -> execute node -> evaluate edges
     -> next node -> end. Node execution is delegated to pluggable NodeHandlers.
 
-    Built-in handlers cover start, end, and function nodes.
-    Consumer apps provide handlers for agent, orchestration, notification, human, etc.
+    Built-in handlers cover start, end, function, condition, switch, log, and
+    parallel nodes. Consumer apps provide handlers for agent, orchestration,
+    notification, human, and other app-specific node types.
 
     Observer-side streaming (``stream()`` / ``emit()``) comes from
     ``_StreamingMixin``; see ``engine/streaming.py``.

@@ -39,9 +39,10 @@ class NodeHandler(ABC):
     """Interface for executing a specific node type.
 
     Implement this to provide app-specific execution logic.
-    roomkit-graph provides built-in handlers for start, end, and function nodes.
-    Consumer apps (e.g. Luge) provide handlers for agent, orchestration,
-    notification, human, and other app-specific node types.
+    roomkit-graph ships built-in handlers for start, end, function,
+    condition, switch, log, and parallel nodes. Consumer apps provide
+    handlers for agent, orchestration, notification, human, and other
+    app-specific node types.
     """
 
     @abstractmethod
