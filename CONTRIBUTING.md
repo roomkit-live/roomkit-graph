@@ -90,26 +90,25 @@ Every new feature or node type **must** include:
 
 ### New Node Type Checklist
 
-1. Implementation in `src/roomkit_graph/nodes/<name>.py`
-2. Register in `NodeType` enum and node registry
-3. Export from `src/roomkit_graph/nodes/__init__.py` and `src/roomkit_graph/__init__.py`
-4. Tests in `tests/test_nodes/test_<name>.py`
-5. Example workflow in `examples/`
-6. README update with usage example
+1. Add the variant to the `NodeType` enum in `src/roomkit_graph/nodes/base.py`
+2. Add a handler class (subclass `NodeHandler`) in `src/roomkit_graph/handlers.py`
+3. Register the handler in `_BUILTIN_HANDLERS` in `src/roomkit_graph/engine/executor.py`
+4. Re-export the handler from `src/roomkit_graph/__init__.py`
+5. Tests covering happy path, edge cases, and serialization in `tests/test_executor.py` (or a sibling test file)
+6. Example workflow in `examples/` and a README usage snippet
 
 ### New Function Action Checklist
 
-1. Implementation in `src/roomkit_graph/nodes/function.py` (action handler)
-2. Register in the built-in action registry
-3. Tests in `tests/test_nodes/test_function.py`
-4. README update with usage example
+1. Add the `if action == "<name>"` arm to `FunctionHandler.execute` in `src/roomkit_graph/handlers.py`
+2. Tests in `tests/test_executor.py` covering happy path + missing/invalid config
+3. README update with a config example under "Function Nodes"
 
 ### New Condition Operator Checklist
 
-1. Implementation in `src/roomkit_graph/edges/condition.py`
-2. Register operator in the condition evaluator
-3. Tests in `tests/test_edges/test_condition.py`
-4. Ensure JSON serialization round-trips correctly
+1. Add the `if self.op == "<name>"` arm to `Condition._evaluate_field` in `src/roomkit_graph/edges/condition.py`
+2. Add a matching builder method on `ConditionBuilder` in the same file
+3. Tests in `tests/test_condition.py` covering evaluation + JSON round-trip via `to_dict` / `from_dict`
+4. README update under "Conditions"
 
 ## Pull Request Guidelines
 
