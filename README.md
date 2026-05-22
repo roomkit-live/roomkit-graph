@@ -390,7 +390,7 @@ This enables passing structured objects between steps without losing type inform
 
 ## Status
 
-Early development. API is not stable.
+Alpha. The 0.1.x line is the first public release; the API may evolve between minor versions while the engine, streaming, and persistence surface settle. Breaking changes will be called out in the [changelog](CHANGELOG.md).
 
 ## License
 

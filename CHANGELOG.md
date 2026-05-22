@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] — 2026-05-22
+
+First public release. No code changes from `0.1.0a2`; this cut drops
+the alpha-N suffix and graduates the Trove classifier from Pre-Alpha
+to Alpha now that the engine, streaming surface, persistence, and
+built-in handler set are feature-complete and exercised by the full
+test suite, examples, and CI.
+
+### Changed
+- README "Status" section rephrased — Alpha, with the API allowed to
+  evolve between minor versions until 1.0.
+- Trove classifier `Development Status` → `3 - Alpha`.
+
+### Fixed
+- `examples/graph_definition.py` template path corrected from
+  `{{start.input}}` to `{{start.output.input}}` to match the engine's
+  context layout (other examples and the README were already correct).
+- `NodeHandler` and `WorkflowEngine` docstrings list the full set of
+  built-in handlers (start, end, function, condition, switch, log,
+  parallel) instead of only the first three.
+- `CONTRIBUTING.md` checklists rewritten to reference the actual file
+  layout (single `handlers.py`, flat `tests/`, condition operators on
+  `Condition._evaluate_field`).
+
 ## [0.1.0a2] — 2026-04-17
 
 ### Added
