@@ -137,7 +137,7 @@ def test_reserved_prefixes_missing_return_default():
     assert ctx.get("trigger.ghost", "fallback") == "fallback"
 
 
-def test_legacy_output_paths_still_resolve():
+def test_dotted_output_paths_still_resolve():
     # Non-regression: node.output.field keeps working alongside the new scopes
     ctx = WorkflowContext()
     ctx.set("triage", {"severity": "high"})

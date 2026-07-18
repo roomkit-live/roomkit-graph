@@ -235,7 +235,7 @@ def test_resolve_steps_scope():
     ctx.set("triage", {"severity": "critical"})
     resolver = TemplateResolver(ctx)
 
-    # steps.<id> skips the ".output" hop that the legacy path requires
+    # steps.<id> skips the ".output" hop that the dotted path requires
     assert resolver.resolve("Severity: {{steps.triage.severity}}") == "Severity: critical"
 
 
