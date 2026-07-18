@@ -659,3 +659,95 @@ async def test_parallel_child_exception():
 
     with pytest.raises(ExecutionError, match="unexpected error"):
         await executor.step()
+
+
+# --- input / steps / trigger scopes during execution ---
+
+
+def _skip_gate_graph() -> Graph:
+    """start → (input.skip is True: skipped, else: work) → end.
+
+    The routing condition lives on the edge leaving start and reads the
+    trigger payload via ``input.skip`` — no helper/agent node needed.
+    """
+    g = Graph(id="gate", name="Skip gate", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("work", type="function", config={"action": "set_context", "values": {"ran": "work"}}),
+        Node(
+            "skipped",
+            type="function",
+            config={"action": "set_context", "values": {"ran": "skipped"}},
+        ),
+        Node("end", type="end"),
+    )
+    g.add_edges(
+        Edge("start", "skipped", Condition.field("input.skip").equals(True)),
+        Edge("start", "work", Condition.otherwise()),
+        Edge("work", "end"),
+        Edge("skipped", "end"),
+    )
+    return g
+
+
+async def test_edge_condition_routes_on_trigger_input():
+    """LUG-181 case: an edge condition routes on input.skip with no agent."""
+    g = _skip_gate_graph()
+
+    skipped = await WorkflowEngine(g).run(trigger_data={"skip": True})
+    assert skipped.get("steps.skipped.ran") == "skipped"
+    assert skipped.has("steps.work") is False
+
+    proceeded = await WorkflowEngine(g).run(trigger_data={"skip": False})
+    assert proceeded.get("steps.work.ran") == "work"
+    assert proceeded.has("steps.skipped") is False
+
+
+async def test_node_reads_predecessor_output_via_input_scope():
+    """A node's own {{input.x}} resolves against its predecessor's output."""
+    captured: dict[str, object] = {}
+
+    class CaptureHandler(NodeHandler):
+        async def execute(self, node, context, engine):
+            captured["input"] = context.get("input")
+            captured["severity"] = context.get("input.severity")
+            return NodeResult(output={"seen": True})
+
+    g = Graph(id="cap", name="Capture", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node(
+            "triage",
+            type="function",
+            config={"action": "set_context", "values": {"severity": "high"}},
+        ),
+        Node("notify", type="capture"),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "triage"), Edge("triage", "notify"), Edge("notify", "end"))
+
+    await WorkflowEngine(g, handlers={"capture": CaptureHandler()}).run()
+
+    assert captured["input"] == {"severity": "high"}
+    assert captured["severity"] == "high"
+
+
+def test_predecessor_input_maps_multiple_sources():
+    """A node with several predecessors gets {source_id: output}.
+
+    The engine runs a single active path, so a genuine multi-predecessor merge
+    is not produced by run(); the {source_id: output} shape is verified directly.
+    """
+    g = Graph(id="merge", name="Merge", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("a", type="function", config={"action": "set_context", "values": {}}),
+        Node("b", type="function", config={"action": "set_context", "values": {}}),
+        Node("join", type="function", config={"action": "set_context", "values": {}}),
+    )
+    g.add_edges(Edge("a", "join"), Edge("b", "join"))
+
+    engine = WorkflowEngine(g)
+    engine.context.set("a", {"x": 1})
+    engine.context.set("b", {"y": 2})
+
+    assert engine._predecessor_input("join") == {"a": {"x": 1}, "b": {"y": 2}}

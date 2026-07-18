@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-07-18
+
+### Added
+- Native reserved scope prefixes in `WorkflowContext.get()`, resolved at the
+  single point shared by `TemplateResolver` and edge-condition evaluation:
+  - `input.<...>` — the "current input" the engine sets per step (a node's
+    predecessor output before it runs; the routing node's own output before its
+    outgoing edges are evaluated).
+  - `steps.<id>.<...>` — a node's stored output directly (no `output` hop);
+    `steps.start` is the unwrapped trigger payload.
+  - `trigger.<...>` — alias for `steps.start`.
+  These now resolve identically in templates (`{{input.x}}`) and in edge
+  conditions (`Condition.field("input.skip")`), so a condition edge can route on
+  trigger/predecessor data without a helper node. `{{node.output.field}}` paths
+  are unchanged. A node literally named `input`/`steps`/`trigger` is shadowed by
+  the reserved prefix.
+
 ## [0.1.0] — 2026-05-22
 
 First public release. No code changes from `0.1.0a2`; this cut drops

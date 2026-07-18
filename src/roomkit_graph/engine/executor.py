@@ -128,6 +128,11 @@ class WorkflowEngine(_StreamingMixin):
             msg = f"No handler registered for node type '{node.type}'"
             raise ExecutionError(msg)
 
+        # Scope input.* to the unwrapped output of this node's predecessor(s)
+        # so the node's own templates ({{input.x}}) resolve against what
+        # flowed into it.
+        self._context.set_current_input(self._predecessor_input(node.id))
+
         result = await handler.execute(node, self._context, self)
 
         # Store output in context
@@ -200,6 +205,9 @@ class WorkflowEngine(_StreamingMixin):
         if not edges:
             return None
 
+        # Edge conditions read input.* as the routing node's own output.
+        self._context.set_current_input(self._context.get(f"steps.{node_id}"))
+
         # Separate edge types and evaluate conditionals first
         otherwise_edge = None
         unconditional_edge = None
@@ -223,6 +231,20 @@ class WorkflowEngine(_StreamingMixin):
 
         msg = f"No valid transition from node '{node_id}'"
         raise NoValidTransitionError(msg)
+
+    def _predecessor_input(self, node_id: str) -> Any:
+        """The unwrapped output of ``node_id``'s predecessor(s) — the input scope.
+
+        One predecessor yields its output; several yield ``{source_id: output}``;
+        none yields ``None``. Resolution reuses ``steps.<id>``, so a ``start``
+        predecessor naturally yields the unwrapped trigger payload.
+        """
+        sources = [edge.source for edge in self._graph.get_incoming_edges(node_id)]
+        if not sources:
+            return None
+        if len(sources) == 1:
+            return self._context.get(f"steps.{sources[0]}")
+        return {source: self._context.get(f"steps.{source}") for source in sources}
 
     # --- Serialization ---
 

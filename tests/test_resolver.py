@@ -217,3 +217,32 @@ def test_resolve_value_passthrough_missing_raises():
 
     with pytest.raises(TemplateError):
         resolver.resolve_value("{{ghost.output.field}}")
+
+
+# --- Reserved scope prefixes in templates: input / steps / trigger ---
+
+
+def test_resolve_input_scope():
+    ctx = WorkflowContext()
+    ctx.set_current_input({"topic": "billing"})
+    resolver = TemplateResolver(ctx)
+
+    assert resolver.resolve("Write about: {{input.topic}}") == "Write about: billing"
+
+
+def test_resolve_steps_scope():
+    ctx = WorkflowContext()
+    ctx.set("triage", {"severity": "critical"})
+    resolver = TemplateResolver(ctx)
+
+    # steps.<id> skips the ".output" hop that the legacy path requires
+    assert resolver.resolve("Severity: {{steps.triage.severity}}") == "Severity: critical"
+
+
+def test_resolve_trigger_scope_passthrough():
+    ctx = WorkflowContext()
+    ctx.set("start", {"input": {"skip": True}})
+    resolver = TemplateResolver(ctx)
+
+    # Single placeholder returns the raw value (bool), not "True"
+    assert resolver.resolve_value("{{trigger.skip}}") is True
