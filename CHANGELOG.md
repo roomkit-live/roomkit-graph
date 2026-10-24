@@ -23,6 +23,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   commit messages.
 
 ### Added
+- `verbose(messages=True)`: each agent's text printed as the agent writes it.
+  `AgentHandler` subscribes to the delegated task's child room from
+  `ON_TASK_DELEGATED` when content is logged, and logs each `TEXT_DELTA`
+  (RoomKit 0.109+) as an `agent.text` record at DEBUG; with an earlier RoomKit
+  none arrives. The examples use it.
 - `verbose()`: every run's progress on stderr as it happens — each step, each
   agent's turn with its duration, tokens (cache included) and tools, each
   message sent, each pause and resume — one line each, prefixed by graph and

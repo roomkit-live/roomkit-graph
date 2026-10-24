@@ -21,9 +21,14 @@ keeps the paused ones by the room their answer will arrive in::
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import logging
+import time
+import weakref
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 try:
@@ -33,6 +38,8 @@ try:
         ChannelOutput,
         ChannelType,
         EventType,
+        HookExecution,
+        HookTrigger,
         InboundMessage,
         RoomEvent,
         RoomKit,
@@ -54,6 +61,82 @@ WORKFLOW_CHANNEL_ID = "workflow"
 _RUN_ROOM = "{{trigger.room_id}}"
 
 logger = logging.getLogger("roomkit_graph.roomkit")
+
+_TEXT_DELTA = "text_delta"
+"""The ephemeral an agent's answer text is published in as it is written
+(RoomKit 0.109 and later; with an earlier RoomKit, none arrives)."""
+_QUIET_S = 0.02
+_SETTLE_S = 0.5
+
+
+@dataclass
+class _LiveText:
+    """A delegation whose agent's text is logged as it is written."""
+
+    engine: WorkflowEngine
+    node: Node
+    agent: str
+    subscription: str | None = None
+    last_seen: float = 0.0
+
+    async def on_ephemeral(self, event: Any) -> None:
+        if getattr(event.type, "value", event.type) != _TEXT_DELTA:
+            return
+        self.last_seen = time.monotonic()
+        text = (event.data or {}).get("text", "")
+        if text:
+            log_run(
+                logger,
+                logging.DEBUG,
+                self.engine,
+                "agent.text",
+                "%s writes: %s",
+                self.agent,
+                text,
+                node=self.node.id,
+                agent=self.agent,
+                text=text,
+            )
+
+    async def settle(self) -> None:
+        """Let the text still on its way arrive: a quiet of ``_QUIET_S``,
+        ``_SETTLE_S`` at most. Unsubscribing drops what is still queued."""
+        deadline = time.monotonic() + _SETTLE_S
+        while time.monotonic() < deadline:
+            await asyncio.sleep(_QUIET_S / 4)
+            if time.monotonic() - self.last_seen >= _QUIET_S:
+                return
+
+
+_WATCHED: contextvars.ContextVar[_LiveText | None] = contextvars.ContextVar(
+    "roomkit_graph_live_text", default=None
+)
+_HOOKED: weakref.WeakSet[RoomKit] = weakref.WeakSet()
+
+
+def _hook_live_text(kit: RoomKit) -> None:
+    """Once per kit: when a node watching its agent's text delegates, subscribe
+    to the task's child room before the agent starts (``ON_TASK_DELEGATED``
+    runs before it)."""
+    if kit in _HOOKED:
+        return
+    _HOOKED.add(kit)
+
+    @kit.hook(
+        HookTrigger.ON_TASK_DELEGATED,
+        execution=HookExecution.ASYNC,
+        name="roomkit_graph_live_text",
+    )
+    async def _subscribe(event: Any, context: Any) -> None:
+        watch = _WATCHED.get()
+        metadata = event.metadata or {}
+        if watch is None or watch.subscription is not None:
+            return
+        if metadata.get("agent_id") != watch.agent or "child_room_id" not in metadata:
+            return
+        watch.subscription = await kit.realtime.subscribe_to_room(
+            metadata["child_room_id"], watch.on_ephemeral
+        )
 
 
 class WorkflowChannel(Channel):
@@ -89,6 +172,7 @@ class AgentHandler(NodeHandler):
 
     def __init__(self, kit: RoomKit) -> None:
         self._kit = kit
+        _hook_live_text(kit)
 
     async def execute(
         self, node: Node, context: WorkflowContext, engine: WorkflowEngine
@@ -136,14 +220,31 @@ class AgentHandler(NodeHandler):
             agent=agent_id,
             text=prompt,
         )
-        task = await self._kit.delegate(
-            resolve(node.config.get("room", _RUN_ROOM)),
-            agent_id,
-            prompt,
-            wait=True,
-            require_structured_result=structured,
-        )
-        return await task.wait()
+        room_id = resolve(node.config.get("room", _RUN_ROOM))
+        return await self._run_task(engine, node, room_id, agent_id, prompt, structured)
+
+    async def _run_task(
+        self,
+        engine: WorkflowEngine,
+        node: Node,
+        room_id: str,
+        agent_id: str,
+        prompt: str,
+        structured: bool,
+    ) -> DelegatedTaskResult:
+        """Delegate; the agent's text is logged as it is written when content is."""
+        watch = _LiveText(engine, node, agent_id) if logger.isEnabledFor(logging.DEBUG) else None
+        token = _WATCHED.set(watch)
+        try:
+            task = await self._kit.delegate(
+                room_id, agent_id, prompt, wait=True, require_structured_result=structured
+            )
+            return await task.wait()
+        finally:
+            _WATCHED.reset(token)
+            if watch is not None and watch.subscription is not None:
+                await watch.settle()
+                await self._kit.realtime.unsubscribe(watch.subscription)
 
     async def _log_done(
         self, node: Node, engine: WorkflowEngine, result: DelegatedTaskResult

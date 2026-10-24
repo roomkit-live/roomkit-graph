@@ -258,6 +258,19 @@ verbose()                 # content=False hides prompts, answers and message tex
 [support-triage b3da3aaf] ⏸ page · waiting for an answer
 ```
 
+`verbose(messages=True)` prints each agent's text as the agent writes it,
+instead of its answer cut to one line, a `✎` line per line of text:
+
+```
+[research-crew d5c72753]   researcher · Senior research analyst · working…
+[research-crew d5c72753]   ✎ **AI agents in customer support: ten things that matter**
+[research-crew d5c72753]   ✎ 1. **Fact: Assistive AI has the best evidence.** A large NBER study…
+```
+
+It reads the `TEXT_DELTA` ephemerals RoomKit 0.109 and later publishes in a
+delegated task's child room; with an earlier RoomKit, no text arrives and
+nothing else changes.
+
 Each line names its graph and run (`engine.run_id`), so runs that interleave
 stay apart. The `roomkit_graph` logger then prints there only; `close()` on the
 handler `verbose()` returns gives it back.

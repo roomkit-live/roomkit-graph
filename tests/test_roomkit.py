@@ -9,9 +9,17 @@ import pytest
 from roomkit import RoomKit, SMSChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
-from roomkit.providers.ai.base import AIResponse, AIToolCall
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIProvider,
+    AIResponse,
+    AIToolCall,
+    StreamDone,
+    StreamTextDelta,
+)
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
+from roomkit.realtime.base import EphemeralEventType
 
 from roomkit_graph import Edge, Graph, ManualTrigger, Node, WorkflowEngine, verbose
 from roomkit_graph.roomkit import RoomRuns, room_handlers
@@ -150,3 +158,57 @@ async def test_an_agent_turn_is_logged_and_shown_without_content_at_info(kit, ca
     assert "writer answered" in shown and "112 → 34 tokens (100 from cache)" in shown
     assert ("asked: Write about graphs" in shown) is content
     assert ("answer: A short report." in shown) is content
+
+
+class _Tokens(AIProvider):
+    """Streams its answer word by word, as a model streams tokens."""
+
+    def __init__(self, words: list[str]) -> None:
+        self._words = words
+
+    @property
+    def model_name(self) -> str:
+        return "tokens"
+
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
+    @property
+    def supports_structured_streaming(self) -> bool:
+        return True
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        return AIResponse(content="".join(self._words), finish_reason="stop")
+
+    async def generate_stream(self, context: AIContext):
+        for word in self._words:
+            yield word
+
+    async def generate_structured_stream(self, context: AIContext):
+        for word in self._words:
+            yield StreamTextDelta(text=word)
+        yield StreamDone(finish_reason="stop", usage={})
+
+
+@pytest.mark.skipif(
+    not hasattr(EphemeralEventType, "TEXT_DELTA"), reason="RoomKit publishes TEXT_DELTA from 0.109"
+)
+async def test_verbose_messages_shows_an_agent_node_writing(kit):
+    words = [f"word{i} " for i in range(60)]
+    kit.register_channel(Agent("writer", provider=_Tokens(words), role="Report writer"))
+    room = await kit.create_room()
+    graph = _one_agent_graph({"agent": "writer", "prompt": "Write"})
+    out = io.StringIO()
+    handler = verbose(messages=True, stream=out)
+    try:
+        engine = WorkflowEngine(graph, handlers=room_handlers(kit))
+        await engine.run({"room_id": room.id})
+    finally:
+        handler.close()
+
+    prefix = f"[agent {engine.run_id}]   ✎ "
+    written = [line.removeprefix(prefix) for line in out.getvalue().splitlines()]
+    texts = [line for line in out.getvalue().splitlines() if line.startswith(prefix)]
+    assert "".join(line.removeprefix(prefix) for line in texts) == "".join(words)
+    assert not any(line.startswith("  answer:") for line in written)

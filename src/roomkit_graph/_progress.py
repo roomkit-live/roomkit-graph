@@ -98,32 +98,73 @@ _LINES: dict[str, tuple[Callable[[dict[str, Any]], str], str | None]] = {
 
 
 class _ProgressHandler(logging.Handler):
-    """Prints the run records of the ``roomkit_graph`` loggers as progress lines."""
+    """Prints the run records of the ``roomkit_graph`` loggers as progress lines.
 
-    def __init__(self, stream: TextIO, logger: logging.Logger) -> None:
+    With *messages*, an agent's text (``agent.text``) is printed as it arrives,
+    on lines of its own under its run's prefix; any other line closes it.
+    """
+
+    def __init__(self, stream: TextIO, logger: logging.Logger, *, messages: bool) -> None:
         super().__init__()
         self._stream = stream
         self._colour = stream.isatty()
         self._logger = logger
         self._previous = (logger.level, logger.propagate)
+        self._messages = messages
+        self._open: tuple[str, str] | None = None  # (run, node) of the text line being written
+        self._shown: set[tuple[str, str]] = set()  # nodes whose text was shown live
 
     def emit(self, record: logging.LogRecord) -> None:
         fields = getattr(record, FIELDS, None)
-        if fields is None or fields.get("event") not in _LINES:
+        if fields is None:
             return
-        if fields.get("type") == "start":  # "run started" already says it
-            return
-        render, colour = _LINES[fields["event"]]
-        prefix = self._paint(_printable(f"[{fields['graph']} {fields['run']}]"), _DIM)
         try:
-            line = self._paint(_printable(render(fields)), colour)
-            self._stream.write(f"{prefix} {line}\n")
+            self._emit(fields)
             self._stream.flush()
         except Exception:  # a display must never break the run it shows
             self.handleError(record)
 
+    def _emit(self, fields: dict[str, Any]) -> None:
+        event = fields.get("event")
+        if event == "agent.text":
+            if self._messages:
+                self._write_text(fields)
+            return
+        if event not in _LINES or fields.get("type") == "start":  # "run started" says it
+            return
+        if event == "agent.answer" and (fields["run"], fields["node"]) in self._shown:
+            return  # its text was shown as it was written
+        self._close_text()
+        render, colour = _LINES[event]
+        line = self._paint(_printable(render(fields)), colour)
+        self._stream.write(f"{self._prefix(fields)} {line}\n")
+
+    def _write_text(self, fields: dict[str, Any]) -> None:
+        """An agent's text as it arrives, a newline in it starting a new line."""
+        key = (fields["run"], fields["node"])
+        self._shown.add(key)
+        for i, part in enumerate(str(fields["text"]).split("\n")):
+            if i:
+                self._close_text()
+            if not part:
+                continue
+            if self._open != key:
+                self._close_text()
+                self._stream.write(f"{self._prefix(fields)} {self._paint('  ✎', _DIM)} ")
+                self._open = key
+            self._stream.write(_printable(part))
+
+    def _close_text(self) -> None:
+        if self._open is not None:
+            self._stream.write("\n")
+            self._open = None
+
+    def _prefix(self, fields: dict[str, Any]) -> str:
+        return self._paint(_printable(f"[{fields['graph']} {fields['run']}]"), _DIM)
+
     def close(self) -> None:
         """Stop printing: detach, and give the logger its level and propagation back."""
+        self._close_text()
         self._logger.removeHandler(self)
         self._logger.setLevel(self._previous[0])
         self._logger.propagate = self._previous[1]
@@ -135,12 +176,17 @@ class _ProgressHandler(logging.Handler):
         return f"\033[{colour}m{text}\033[0m"
 
 
-def verbose(*, content: bool = True, stream: TextIO | None = None) -> logging.Handler:
+def verbose(
+    *, content: bool = True, messages: bool = False, stream: TextIO | None = None
+) -> logging.Handler:
     """Print every run's progress on *stream* (stderr by default) as it happens.
 
     Each step, each agent's turn (who, how long, tokens, tools called) and each
     message sent is one line. With *content*, what each agent was asked and
     answered, and the text of each message, are printed too, cut to one line.
+    With *messages*, each agent's text is printed as the agent writes it,
+    instead of its answer cut to one line (needs RoomKit 0.109 or later,
+    which publishes it; content is then shown whatever *content* says).
 
     The ``roomkit_graph`` logger then prints here only: it stops propagating,
     so a root handler does not print the same records again. ``close()`` on the
@@ -151,8 +197,8 @@ def verbose(*, content: bool = True, stream: TextIO | None = None) -> logging.Ha
     for handler in list(logger.handlers):
         if isinstance(handler, _ProgressHandler):
             handler.close()
-    handler = _ProgressHandler(stream or sys.stderr, logger)
+    handler = _ProgressHandler(stream or sys.stderr, logger, messages=messages)
     logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG if content else logging.INFO)
+    logger.setLevel(logging.DEBUG if content or messages else logging.INFO)
     logger.propagate = False
     return handler

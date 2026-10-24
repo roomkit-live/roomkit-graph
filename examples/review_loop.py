@@ -143,7 +143,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
-    verbose()  # each step on stderr as it happens; content=False hides the texts
+    verbose(messages=True)  # each step on stderr; agents' text as they write it (RoomKit 0.109+)
     if "ANTHROPIC_API_KEY" not in os.environ:
         sys.exit("Set ANTHROPIC_API_KEY to run this example.")
     asyncio.run(main())

@@ -138,3 +138,30 @@ async def test_verbose_shows_control_characters_escaped_not_obeyed():
     shown = out.getvalue()
     assert "\x1b" not in shown and "\x07" not in shown and "‮" not in shown
     assert "bad\\x1b[2J\\x1b]0;owned\\x07 \\u202edrow" in shown
+
+
+def _record(run: str, event: str, **fields) -> None:
+    logging.getLogger("roomkit_graph").debug(
+        event, extra={"roomkit_graph": {"event": event, "run": run, "graph": "g", **fields}}
+    )
+
+
+def test_verbose_messages_prints_text_as_written_runs_kept_apart():
+    out = io.StringIO()
+    handler = verbose(messages=True, stream=out)
+    try:
+        _record("a", "agent.text", node="write", agent="writer", text="Hello wor")
+        _record("b", "node.start", node="classify", type="agent")
+        _record("a", "agent.text", node="write", agent="writer", text="ld\nsecond line")
+        _record("a", "agent.answer", node="write", agent="writer", text="Hello world...")
+        _record("c", "agent.answer", node="draft", agent="writer", text="Shown cut")
+    finally:
+        handler.close()
+
+    assert out.getvalue().splitlines() == [
+        "[g a]   ✎ Hello wor",
+        "[g b] ▶ classify (agent)",
+        "[g a]   ✎ ld",
+        "[g a]   ✎ second line",
+        "[g c]   answer: Shown cut",
+    ]
