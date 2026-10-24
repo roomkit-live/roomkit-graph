@@ -737,22 +737,88 @@ async def test_node_reads_predecessor_output_via_input_scope():
     assert captured["severity"] == "high"
 
 
-def test_predecessor_input_maps_multiple_sources():
-    """A node with several predecessors gets {source_id: output}.
+class _InputRecorder(NodeHandler):
+    """Records the input scope each time its node runs; pauses ``review`` nodes."""
 
-    The engine runs a single active path, so a genuine multi-predecessor merge
-    is not produced by run(); the {source_id: output} shape is verified directly.
-    """
+    def __init__(self) -> None:
+        self.inputs: list[tuple[str, object]] = []
+
+    async def execute(self, node, context, engine):
+        self.inputs.append((node.id, context.get("input")))
+        if node.type == "review":
+            return NodeResult(status="waiting")
+        return NodeResult(output={"from": node.id})
+
+
+async def test_input_is_the_output_of_the_branch_taken():
+    """A node reached by two branches reads the output of the one the run took."""
     g = Graph(id="merge", name="Merge", trigger=ManualTrigger())
     g.add_nodes(
-        Node("a", type="function", config={"action": "set_context", "values": {}}),
-        Node("b", type="function", config={"action": "set_context", "values": {}}),
-        Node("join", type="function", config={"action": "set_context", "values": {}}),
+        Node("start", type="start"),
+        Node("a", type="record"),
+        Node("b", type="record"),
+        Node("join", type="record"),
+        Node("end", type="end"),
     )
-    g.add_edges(Edge("a", "join"), Edge("b", "join"))
+    g.add_edges(
+        Edge("start", "a", Condition.field("input.left").equals(True)),
+        Edge("start", "b", Condition.otherwise()),
+        Edge("a", "join"),
+        Edge("b", "join"),
+        Edge("join", "end"),
+    )
 
-    engine = WorkflowEngine(g)
-    engine.context.set("a", {"x": 1})
-    engine.context.set("b", {"y": 2})
+    for left, taken in ((True, "a"), (False, "b")):
+        recorder = _InputRecorder()
+        await WorkflowEngine(g, handlers={"record": recorder}).run({"left": left})
+        assert recorder.inputs[-1] == ("join", {"from": taken})
 
-    assert engine._predecessor_input("join") == {"a": {"x": 1}, "b": {"y": 2}}
+
+async def test_input_in_a_loop_is_what_brought_the_run_back():
+    """A node re-entered from a loop reads what sent it back, then and after a restore."""
+    g = Graph(id="loop", name="Loop", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("draft", type="record"),
+        Node("review", type="review"),
+        Node("end", type="end"),
+    )
+    g.add_edges(
+        Edge("start", "draft"),
+        Edge("draft", "review"),
+        Edge("review", "end", Condition.field("input.ok").equals(True)),
+        Edge("review", "draft", Condition.otherwise()),
+    )
+    recorder = _InputRecorder()
+    handlers = {"record": recorder, "review": recorder}
+
+    engine = WorkflowEngine(g, handlers=handlers)
+    await engine.run({"topic": "x"})
+    await engine.resume("review", {"ok": False, "feedback": "shorter"})
+    # A restored engine, as after a restart between two steps.
+    engine = WorkflowEngine.from_dict(g, engine.to_dict(), handlers=handlers)
+    while await engine.step():
+        pass
+
+    assert recorder.inputs == [
+        ("draft", {"topic": "x"}),
+        ("review", {"from": "draft"}),
+        ("draft", {"ok": False, "feedback": "shorter"}),
+        ("review", {"from": "draft"}),
+    ]
+
+
+async def test_input_after_restoring_state_saved_without_previous_node():
+    """State saved by 0.2.0 has no previous_node_id: a node with one predecessor reads it."""
+    g = Graph(id="old-state", name="Old state", trigger=ManualTrigger())
+    g.add_nodes(Node("start", type="start"), Node("draft", type="record"), Node("end", type="end"))
+    g.add_edges(Edge("start", "draft"), Edge("draft", "end"))
+    recorder = _InputRecorder()
+    engine = WorkflowEngine(g, handlers={"record": recorder})
+    await engine.start({"topic": "x"})
+    await engine.step()  # start → draft
+    state = {k: v for k, v in engine.to_dict().items() if k != "previous_node_id"}
+
+    await WorkflowEngine.from_dict(g, state, handlers={"record": recorder}).step()
+
+    assert recorder.inputs == [("draft", {"topic": "x"})]

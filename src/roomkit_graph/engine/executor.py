@@ -60,6 +60,8 @@ class WorkflowEngine(_StreamingMixin):
         if handlers:
             self._handlers.update(handlers)
         self._current: str | None = None
+        # The node the run came from into _current: its output is the input scope.
+        self._previous: str | None = None
         self._waiting: bool = False
         self._template_resolver: TemplateResolver | None = None
 
@@ -82,7 +84,7 @@ class WorkflowEngine(_StreamingMixin):
         return self._waiting
 
     @property
-    def template_resolver(self) -> TemplateResolver | None:
+    def template_resolver(self) -> TemplateResolver:
         """Template resolver bound to current context. Created lazily."""
         if self._template_resolver is None:
             self._template_resolver = TemplateResolver(self._context)
@@ -102,6 +104,7 @@ class WorkflowEngine(_StreamingMixin):
             msg = "Graph has no start node"
             raise ValueError(msg)
         self._current = start_node.id
+        self._previous = None
         self._context.set("start", {"input": trigger_data})
 
     async def step(self) -> bool:
@@ -133,10 +136,9 @@ class WorkflowEngine(_StreamingMixin):
             msg = f"No handler registered for node type '{node.type}'"
             raise ExecutionError(msg)
 
-        # Scope input.* to the unwrapped output of this node's predecessor(s)
-        # so the node's own templates ({{input.x}}) resolve against what
-        # flowed into it.
-        self._context.set_current_input(self._predecessor_input(node.id))
+        # Scope input.* to what flowed into this node, so its own templates
+        # ({{input.x}}) resolve against it.
+        self._context.set_current_input(self._input_of(node.id))
 
         result = await handler.execute(node, self._context, self)
 
@@ -160,6 +162,7 @@ class WorkflowEngine(_StreamingMixin):
             self._current = None
             return False
 
+        self._previous = node.id
         self._current = next_id
         self._waiting = False
         return True
@@ -183,6 +186,7 @@ class WorkflowEngine(_StreamingMixin):
         if self._current == node_id:
             next_id = self.evaluate_edges(node_id)
             if next_id is not None:
+                self._previous = node_id
                 self._current = next_id
 
     def evaluate_edges(self, node_id: str) -> str | None:
@@ -237,12 +241,22 @@ class WorkflowEngine(_StreamingMixin):
         msg = f"No valid transition from node '{node_id}'"
         raise NoValidTransitionError(msg)
 
+    def _input_of(self, node_id: str) -> Any:
+        """The input scope of ``node_id``: the unwrapped output of the node the
+        run came from — the branch taken at a merge, what sent the run back in a
+        loop. Resolution reuses ``steps.<id>``, so coming from ``start`` yields
+        the unwrapped trigger payload.
+        """
+        if self._previous is not None:
+            return self._context.get(f"steps.{self._previous}")
+        return self._predecessor_input(node_id)
+
     def _predecessor_input(self, node_id: str) -> Any:
-        """The unwrapped output of ``node_id``'s predecessor(s) — the input scope.
+        """The input scope when the node the run came from is unknown: an
+        engine restored from state saved before ``previous_node_id`` was.
 
         One predecessor yields its output; several yield ``{source_id: output}``;
-        none yields ``None``. Resolution reuses ``steps.<id>``, so a ``start``
-        predecessor naturally yields the unwrapped trigger payload.
+        none yields ``None``.
         """
         sources = [edge.source for edge in self._graph.get_incoming_edges(node_id)]
         if not sources:
@@ -258,6 +272,7 @@ class WorkflowEngine(_StreamingMixin):
         return {
             "context": self._context.to_dict(),
             "current_node_id": self._current,
+            "previous_node_id": self._previous,
             "waiting": self._waiting,
         }
 
@@ -272,5 +287,6 @@ class WorkflowEngine(_StreamingMixin):
         ctx = WorkflowContext.from_dict(data["context"])
         engine = cls(graph, handlers=handlers, context=ctx)
         engine._current = data.get("current_node_id")
+        engine._previous = data.get("previous_node_id")
         engine._waiting = data.get("waiting", False)
         return engine

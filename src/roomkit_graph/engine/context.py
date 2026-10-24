@@ -15,8 +15,9 @@ class WorkflowContext:
     resolution point:
 
     - ``input.<...>``      — the "current input" the engine sets before each
-      node runs (its predecessor's output) and before evaluating a node's
-      outgoing edges (that node's own output). See ``set_current_input``.
+      node runs (the output of the node the run came from) and before
+      evaluating a node's outgoing edges (that node's own output). See
+      ``set_current_input``.
     - ``steps.<id>.<...>`` — a node's stored **output** directly (no ``output``
       hop). ``steps.start`` is the unwrapped trigger payload.
     - ``trigger.<...>``    — alias for ``steps.start``.
