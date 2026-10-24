@@ -85,3 +85,28 @@ async def test_human_node_pauses_until_the_answer_arrives_in_its_room(kit):
         ("+15550109999", "Noted: yes"),
     ]
     assert engine.current_node_id is None
+
+
+async def test_runs_paused_on_one_room_are_answered_in_the_order_they_asked(kit):
+    sms = MockSMSProvider()
+    kit.register_channel(SMSChannel("sms", provider=sms))
+    await kit.create_room(room_id="on-call")
+    await kit.attach_channel("on-call", "sms", metadata={"phone_number": "+15550109999"})
+    g = Graph(id="page", name="Page", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("page", type="human", config={"room": "on-call", "text": "Take {{trigger.case}}?"}),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "page"), Edge("page", "end"))
+    runs = RoomRuns()
+    first = WorkflowEngine(g, handlers=room_handlers(kit))
+    second = WorkflowEngine(g, handlers=room_handlers(kit))
+
+    await runs.start(first, {"room_id": "on-call", "case": "A"})
+    await runs.start(second, {"room_id": "on-call", "case": "B"})
+    assert await runs.answer("on-call", {"text": "OK"}) is True
+    assert (first.current_node_id, second.waiting) == (None, True)
+    assert await runs.answer("on-call", {"text": "OK"}) is True
+    assert second.current_node_id is None
+    assert await runs.answer("on-call", {"text": "OK"}) is False

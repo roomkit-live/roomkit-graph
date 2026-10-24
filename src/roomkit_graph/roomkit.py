@@ -22,6 +22,7 @@ keeps the paused ones by the room their answer will arrive in::
 from __future__ import annotations
 
 import json
+from collections import deque
 from typing import Any
 
 try:
@@ -163,14 +164,20 @@ def room_handlers(kit: RoomKit) -> dict[str, NodeHandler]:
 class RoomRuns:
     """Drives runs; keeps a run paused on an ``AskHandler`` node by its room.
 
+    Several runs may wait on one room (two incidents paging the same on-call
+    engineer): each answer arriving there resumes the run that asked first,
+    so none is dropped and none is answered twice. Whoever the room delivers
+    a message from answers; RoomKit routes a sender's messages to their own
+    room, so a room with one correspondent is answered by that correspondent.
+
     The paused runs are held in memory: an application that must survive a
     restart stores ``engine.to_dict()`` instead and rebuilds the engine with
     ``WorkflowEngine.from_dict()``.
     """
 
     def __init__(self) -> None:
-        # room id → the paused run and the node it waits on
-        self._paused: dict[str, tuple[WorkflowEngine, str]] = {}
+        # room id → the runs paused on it, oldest question first, with their node
+        self._paused: dict[str, deque[tuple[WorkflowEngine, str]]] = {}
 
     async def start(self, engine: WorkflowEngine, trigger_data: dict[str, Any]) -> None:
         """Start a run and drive it until it completes or pauses."""
@@ -178,11 +185,13 @@ class RoomRuns:
         await self._drive(engine)
 
     async def answer(self, room_id: str, data: dict[str, Any]) -> bool:
-        """Resume the run waiting for *room_id* with *data*; False when none is."""
-        paused = self._paused.pop(room_id, None)
-        if paused is None:
+        """Resume the run that asked first in *room_id* with *data*; False when none waits."""
+        waiting = self._paused.get(room_id)
+        if not waiting:
             return False
-        engine, node_id = paused
+        engine, node_id = waiting.popleft()
+        if not waiting:
+            del self._paused[room_id]
         await engine.resume(node_id, data)
         await self._drive(engine)
         return True
@@ -193,4 +202,4 @@ class RoomRuns:
         node_id = engine.current_node_id
         if engine.waiting and node_id is not None:
             room_id = engine.context.get(f"{node_id}.output.room")
-            self._paused[room_id] = (engine, node_id)
+            self._paused.setdefault(room_id, deque()).append((engine, node_id))

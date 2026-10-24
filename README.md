@@ -363,9 +363,9 @@ result = await kit.process_inbound(message)
 await runs.answer(result.event.room_id, {"text": message.content.body})
 ```
 
-`RoomRuns.answer()` resumes the run paused on that room, if any. It holds paused
-runs in memory; to survive a restart, store `engine.to_dict()` and rebuild with
-`WorkflowEngine.from_dict()`.
+`RoomRuns.answer()` resumes the run paused on that room, if any; when several
+wait there, the one that asked first. It holds paused runs in memory; to survive
+a restart, store `engine.to_dict()` and rebuild with `WorkflowEngine.from_dict()`.
 
 The workflow speaks in a room through a `WorkflowChannel`, registered and
 attached on first use: unlike an agent attached to the room, it answers nothing.
