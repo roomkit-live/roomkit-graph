@@ -118,3 +118,23 @@ async def test_verbose_prints_a_line_per_step_and_close_restores_the_logger():
     assert "▶ prep (function)" in lines
     assert lines[-1] == "⏸ ask · waiting for an answer"
     assert (logger.level, logger.propagate, handler in logger.handlers) == (*before, False)
+
+
+async def test_verbose_shows_control_characters_escaped_not_obeyed():
+    """A customer's text or an error cannot drive the terminal: no escape reaches it."""
+
+    class _Hostile(NodeHandler):
+        async def execute(self, node, context, engine):
+            return NodeResult(status="failed", error="bad\x1b[2J\x1b]0;owned\x07 ‮drow")
+
+    out = io.StringIO()
+    handler = verbose(stream=out)
+    try:
+        with pytest.raises(ExecutionError):
+            await WorkflowEngine(_graph("hostile"), handlers={"hostile": _Hostile()}).run()
+    finally:
+        handler.close()
+
+    shown = out.getvalue()
+    assert "\x1b" not in shown and "\x07" not in shown and "‮" not in shown
+    assert "bad\\x1b[2J\\x1b]0;owned\\x07 \\u202edrow" in shown

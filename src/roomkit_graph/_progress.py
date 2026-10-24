@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import unicodedata
 from collections import Counter
 from collections.abc import Callable
 from typing import Any, TextIO
@@ -25,6 +26,19 @@ LOGGER = "roomkit_graph"
 _EXCERPT = 160
 
 _GREEN, _YELLOW, _RED, _CYAN, _DIM = "32", "33", "31", "36", "2"
+
+
+def _printable(text: str) -> str:
+    """*text* with every control or format character shown escaped (``\\x1b``).
+
+    What a line prints comes from outside — a customer's message, a model's
+    answer, an error — and a terminal obeys an escape sequence or a bidi
+    override it is written: it could clear the screen or fake a line.
+    """
+    return "".join(
+        c.encode("unicode_escape").decode("ascii") if unicodedata.category(c)[0] == "C" else c
+        for c in text
+    )
 
 
 def _excerpt(text: Any) -> str:
@@ -100,9 +114,10 @@ class _ProgressHandler(logging.Handler):
         if fields.get("type") == "start":  # "run started" already says it
             return
         render, colour = _LINES[fields["event"]]
-        prefix = self._paint(f"[{fields['graph']} {fields['run']}]", _DIM)
+        prefix = self._paint(_printable(f"[{fields['graph']} {fields['run']}]"), _DIM)
         try:
-            self._stream.write(f"{prefix} {self._paint(render(fields), colour)}\n")
+            line = self._paint(_printable(render(fields)), colour)
+            self._stream.write(f"{prefix} {line}\n")
             self._stream.flush()
         except Exception:  # a display must never break the run it shows
             self.handleError(record)
