@@ -428,6 +428,7 @@ uv run python examples/streaming.py          # the four stream modes and emit()
 uv run python examples/research_crew.py "AI agents in customer support"
 uv run python examples/support_triage.py     # SMS in, page the on-call, SMS out
 uv run python examples/review_loop.py        # draft, editor's feedback by SMS, until OK
+uv run python examples/order_desk.py         # agents with their own tools and a skill
 ```
 
 ## Status

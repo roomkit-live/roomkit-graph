@@ -23,6 +23,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   commit messages.
 
 ### Added
+- `examples/order_desk.py`: agent nodes whose agents carry their own tools,
+  and one an Agent Skill (`examples/skills/refund-policy/SKILL.md`): the graph
+  names the agents, RoomKit runs their tools and skills in each task's room.
 - `verbose(messages=True)`: each agent's text printed as the agent writes it.
   `AgentHandler` subscribes to the delegated task's child room from
   `ON_TASK_DELEGATED` when content is logged, and logs each `TEXT_DELTA`
