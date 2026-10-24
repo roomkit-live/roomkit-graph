@@ -77,6 +77,11 @@ class WorkflowEngine(_StreamingMixin):
         return self._current
 
     @property
+    def waiting(self) -> bool:
+        """Whether the run is paused on ``current_node_id``, until ``resume()``."""
+        return self._waiting
+
+    @property
     def template_resolver(self) -> TemplateResolver | None:
         """Template resolver bound to current context. Created lazily."""
         if self._template_resolver is None:

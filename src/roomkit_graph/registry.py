@@ -44,3 +44,7 @@ class FunctionRegistry:
     def list_functions(self) -> list[str]:
         """Return all registered function names."""
         return list(self._functions.keys())
+
+
+graph_registry = FunctionRegistry()
+"""Module-level registry: where ``FunctionHandler`` looks when given no registry."""

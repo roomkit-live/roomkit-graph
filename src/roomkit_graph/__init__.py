@@ -28,7 +28,7 @@ from roomkit_graph.handlers import (
     SwitchHandler,
 )
 from roomkit_graph.nodes.base import Node, NodeType
-from roomkit_graph.registry import FunctionRegistry
+from roomkit_graph.registry import FunctionRegistry, graph_registry
 from roomkit_graph.triggers import (
     EventTrigger,
     ManualTrigger,
@@ -36,9 +36,6 @@ from roomkit_graph.triggers import (
     Trigger,
     WebhookTrigger,
 )
-
-graph_registry = FunctionRegistry()
-"""Module-level function registry for custom FunctionNode actions."""
 
 __all__ = [
     "__version__",

@@ -16,6 +16,7 @@ from roomkit_graph import (
     NodeResult,
     WorkflowContext,
     WorkflowEngine,
+    graph_registry,
 )
 from roomkit_graph.handlers import FunctionHandler
 
@@ -190,9 +191,11 @@ async def test_resume_after_human_node():
     assert executor.current_node_id == "review"
 
     # step executes review handler → sets waiting, returns True
+    assert executor.waiting is False
     advanced = await executor.step()
     assert advanced is True
     assert executor.current_node_id == "review"
+    assert executor.waiting is True
 
     # step while waiting — returns False without re-executing
     advanced = await executor.step()
@@ -203,6 +206,7 @@ async def test_resume_after_human_node():
     await executor.resume("review", {"action": "approve", "feedback": "LGTM"})
     assert executor.context.get("review.output.action") == "approve"
     assert executor.current_node_id == "end"
+    assert executor.waiting is False
 
     # step at end → completes
     advanced = await executor.step()
@@ -414,7 +418,7 @@ async def test_engine_to_dict_and_from_dict():
     # Restore
     restored = WorkflowEngine.from_dict(g, state, handlers=handlers)
     assert restored.current_node_id == "review"
-    assert restored._waiting is True
+    assert restored.waiting is True
     assert restored.context.get("start.output.input") == {"msg": "hello"}
 
 
@@ -505,22 +509,23 @@ async def test_function_handler_custom_sync():
     assert ctx.get("calc.output.value") == 10
 
 
-async def test_function_handler_custom_no_registry():
-    """Custom action without registry returns failed result."""
-    g = Graph(id="no_reg", name="NoReg", trigger=ManualTrigger())
+async def test_function_handler_custom_defaults_to_graph_registry(monkeypatch):
+    """Without handlers passed in, custom functions come from graph_registry."""
+    monkeypatch.setitem(
+        graph_registry._functions, "triple", lambda context, config: {"value": 3 * config["x"]}
+    )
+
+    g = Graph(id="default_reg", name="DefaultReg", trigger=ManualTrigger())
     g.add_nodes(
         Node("start", type="start"),
-        Node("fn", type="function", config={"action": "custom", "function": "missing"}),
+        Node("fn", type="function", config={"action": "custom", "function": "triple", "x": 4}),
         Node("end", type="end"),
     )
     g.add_edges(Edge("start", "fn"), Edge("fn", "end"))
 
-    executor = WorkflowEngine(g)
-    await executor.start()
-    await executor.step()  # start → fn
+    ctx = await WorkflowEngine(g).run()
 
-    with pytest.raises(ExecutionError, match="No function registry configured"):
-        await executor.step()
+    assert ctx.get("fn.output.value") == 12
 
 
 async def test_function_handler_custom_unknown_function():
@@ -691,7 +696,7 @@ def _skip_gate_graph() -> Graph:
 
 
 async def test_edge_condition_routes_on_trigger_input():
-    """LUG-181 case: an edge condition routes on input.skip with no agent."""
+    """An edge condition routes on input.skip with no agent."""
     g = _skip_gate_graph()
 
     skipped = await WorkflowEngine(g).run(trigger_data={"skip": True})

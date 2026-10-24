@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from roomkit_graph.engine.executor import WorkflowEngine
     from roomkit_graph.nodes.base import Node
-    from roomkit_graph.registry import FunctionRegistry
 
 from roomkit_graph.engine.context import WorkflowContext
 from roomkit_graph.engine.streaming import _current_node_var
+from roomkit_graph.registry import FunctionRegistry, graph_registry
 
 
 @dataclass
@@ -90,13 +90,14 @@ class FunctionHandler(NodeHandler):
     - set_context: Write values to workflow context
     - delay: Wait (no-op in base implementation, override for real delays)
     - json_transform: Resolve templates in a dict structure
-    - custom: Execute a function from the registry by name
+    - custom: Execute a function from the registry by name — the one passed
+      in, or ``graph_registry`` when none is
 
     Override or extend for app-specific actions (http_request, etc.).
     """
 
     def __init__(self, registry: FunctionRegistry | None = None) -> None:
-        self._registry = registry
+        self._registry = registry if registry is not None else graph_registry
 
     async def execute(
         self, node: Node, context: WorkflowContext, engine: WorkflowEngine
@@ -128,10 +129,6 @@ class FunctionHandler(NodeHandler):
         self, node: Node, context: WorkflowContext, engine: WorkflowEngine
     ) -> NodeResult:
         """Execute a registered custom function by name."""
-        if self._registry is None:
-            return NodeResult(
-                output=None, status="failed", error="No function registry configured"
-            )
         name = node.config.get("function", "")
         if not self._registry.has(name):
             return NodeResult(
