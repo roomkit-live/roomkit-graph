@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from roomkit_graph import TemplateResolver, WorkflowContext
+import pytest
+
+from roomkit_graph import TemplateError, TemplateResolver, WorkflowContext
 
 
 def _ctx_with_data() -> WorkflowContext:
@@ -246,3 +248,37 @@ def test_resolve_trigger_scope_passthrough():
 
     # Single placeholder returns the raw value (bool), not "True"
     assert resolver.resolve_value("{{trigger.skip}}") is True
+
+
+# --- default(): a value for a path that is not there ---
+
+
+@pytest.mark.parametrize(
+    ("template", "expected"),
+    [
+        ('Owner: {{steps.page.owner | default("nobody")}}', "Owner: nobody"),
+        ('Severity: {{triage.output.severity|default("low")}}', "Severity: critical"),
+        ('{{ steps.page.owner | default("") }}', ""),
+        ("{{steps.page.count | default(0)}}", 0),
+        ("{{steps.page.owner | default(null)}}", None),
+        ("{{triage.output | default(null)}}", {"severity": "critical", "category": "auth"}),
+    ],
+)
+def test_default_stands_in_for_a_missing_path(template, expected):
+    resolver = TemplateResolver(_ctx_with_data())
+
+    assert resolver.resolve_value(template) == expected
+
+
+@pytest.mark.parametrize(
+    ("template", "message"),
+    [
+        ("{{steps.page.owner | upper}}", "Unknown template filter"),
+        ("{{steps.page.owner | default(nobody)}}", "takes a JSON value"),
+    ],
+)
+def test_default_refuses_what_it_cannot_read(template, message):
+    resolver = TemplateResolver(_ctx_with_data())
+
+    with pytest.raises(TemplateError, match=message):
+        resolver.resolve(template)
