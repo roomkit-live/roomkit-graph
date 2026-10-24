@@ -7,6 +7,32 @@ on:
     branches: [main]
 
 jobs:
+  commit-messages:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Same rule as the `no-downstream-names` commit-msg hook, for commits
+      # made where the hook is not installed. A push that creates the branch
+      # has no `before`, so only its head commit is checked.
+      - name: Commit messages name no downstream application
+        env:
+          BEFORE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            range="$HEAD_SHA^!"
+          else
+            range="$BEFORE..$HEAD_SHA"
+          fi
+          if git log --format='%h %B' "$range" | grep -inE '\bluge\b|\bLUG-[0-9]+'; then
+            echo "::error::Commit messages must not name a downstream application (see .pre-commit-config.yaml)"
+            exit 1
+          fi
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -20,7 +46,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev --prerelease=allow
+        run: uv sync --extra dev
 
       - name: Ruff check
         run: uv run ruff check src/ tests/
@@ -41,7 +67,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev --prerelease=allow
+        run: uv sync --extra dev
 
       - name: Bandit
         run: uv run bandit -r src/ -c pyproject.toml
@@ -59,7 +85,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev --prerelease=allow
+        run: uv sync --extra dev
 
       - name: ty
         run: uv run ty check src/roomkit_graph/
@@ -77,7 +103,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install base package only
-        run: uv venv && uv pip install . --prerelease=allow
+        run: uv venv && uv pip install .
 
       - name: Install pytest
         run: uv pip install pytest pytest-asyncio
@@ -101,7 +127,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --extra dev --prerelease=allow
+        run: uv sync --extra dev
 
       - name: Run tests
         run: uv run pytest --cov --cov-report=xml

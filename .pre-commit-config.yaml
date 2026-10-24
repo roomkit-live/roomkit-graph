@@ -1,0 +1,14 @@
+# `commit-msg` too: the message check below runs on that stage, and a plain
+# `pre-commit install` only wires the one this line lists.
+default_install_hook_types: [pre-commit, commit-msg]
+repos:
+  - repo: local
+    hooks:
+      # The repository is public: commit messages never name a downstream
+      # application or its board. CI re-checks pushed messages for commits
+      # made without the hook installed.
+      - id: no-downstream-names
+        name: commit message names no downstream application
+        entry: '(?i)\bluge\b|\bLUG-[0-9]+'
+        language: pygrep
+        stages: [commit-msg]
