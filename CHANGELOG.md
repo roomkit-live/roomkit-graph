@@ -6,14 +6,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** `input.<...>` in a node's templates is the output of the node
+  the run came from. A node with several incoming edges got
+  `{source_id: output}` for every one of them, `None` for the branches not
+  taken, so a merge or a loop could not read what brought the run there.
+  Engine state records it as `previous_node_id`; state saved without it
+  restores with the former reading. Migrate `{{input.<source_id>.x}}` on a
+  merge node to `{{input.x}}`, or to `{{steps.<source_id>.x}}`.
+- `WorkflowEngine.template_resolver` is typed `TemplateResolver`: it never
+  returned `None`, and handlers had to narrow it.
+- README rewritten to describe what the engine does and what handlers bring:
+  triggers start nothing, the built-in `delay` does not wait, parallel nodes
+  join on all children only.
+- A commit-msg hook and a CI check keep downstream application names out of
+  commit messages.
+
 ### Added
+- `{{path | default(<JSON value>)}}` in templates: what stands in for a path
+  that is not there, instead of `TemplateError` — a step on the other branch,
+  a loop's first pass.
+- `roomkit_graph.roomkit`, behind the `roomkit` extra: `agent`, `notification`
+  and `human` nodes run with RoomKit agents and rooms (`room_handlers(kit)`),
+  `RoomRuns` resuming a run paused on a person when their answer arrives in
+  the room, and the `WorkflowChannel` the workflow speaks from.
 - `WorkflowEngine.waiting` — whether the run is paused on `current_node_id`
   until `resume()`. It was only readable through `to_dict()["waiting"]`.
-- Examples run by RoomKit agents, behind a new `examples` extra:
-  `research_crew.py` (a researcher then a writer, the CrewAI quickstart) and
+- Examples run by RoomKit agents, behind the `examples` extra:
+  `research_crew.py` (a researcher then a writer, the CrewAI quickstart),
   `support_triage.py` (an SMS starts a run, urgent ones page the on-call by SMS
-  and wait for the reply). `examples/roomkit_nodes.py` holds the RoomKit
-  handlers they share.
+  and wait for the reply) and `review_loop.py` (drafts and the editor's
+  feedback by SMS, until approved).
 
 ### Fixed
 - A `custom` function node run by the default `FunctionHandler` looks up
@@ -21,18 +44,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   function registered on the exported `graph_registry` was never found.
 
 ### Removed
-- The `roomkit` runtime dependency: no module imports it since the
-  `GraphOrchestration` removal, and installing `roomkit-graph` no longer pulls
-  RoomKit in. Applications that use both declare `roomkit` themselves.
+- The `roomkit` runtime dependency: no module imported it since the
+  `GraphOrchestration` removal, and installing `roomkit-graph` pulled RoomKit
+  in. RoomKit is now the `roomkit` extra, for `roomkit_graph.roomkit` only.
 - The `httpx` extra: nothing in the package uses it.
-
-### Changed
-- README rewritten to describe what the engine does and what the application's
-  handlers bring: no RoomKit handlers ship, triggers start nothing, the built-in
-  `delay` does not wait, `custom` functions need a registry passed to
-  `FunctionHandler`, parallel nodes join on all children only.
-- A commit-msg hook and a CI check keep downstream application names out of
-  commit messages.
 
 ## [0.2.0] — 2026-07-18
 

@@ -24,7 +24,6 @@ These run real models: `uv sync --extra examples`, then set `ANTHROPIC_API_KEY`.
 |---------|---------|-------------|
 | `research_crew.py` | Agents in sequence | The CrewAI quickstart: a researcher, then a writer, on a topic you pass |
 | `support_triage.py` | SMS in and out, structured result, pause on a person | A customer's SMS starts a run; urgent ones page the on-call engineer by SMS and wait for their reply |
+| `review_loop.py` | A loop, `input` on the way back, `default(...)` | A writer drafts, the editor answers by SMS, and the run loops until they reply OK |
 
-`roomkit_nodes.py` holds the RoomKit handlers both use — `agent`, `notification`
-and `human` nodes, the channel the workflow speaks from, and the runs paused on a
-person. roomkit-graph does not ship them yet.
+They run their nodes through `roomkit_graph.roomkit`.

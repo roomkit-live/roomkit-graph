@@ -7,7 +7,7 @@ A customer's SMS lands in their RoomKit room and starts a run. An agent
 classifies it with a structured result. When it is urgent, the on-call
 engineer gets an SMS in their own room and the run pauses there; their reply
 resumes it. A second agent writes the answer, and the workflow texts it back
-to the customer.
+to the customer. The nodes run through ``roomkit_graph.roomkit``.
 
 The people are simulated: two customers and the on-call engineer text in
 through ``kit.process_inbound()``, the way an SMS webhook would. The SMS
@@ -33,9 +33,9 @@ from roomkit import InboundMessage, Participant, RoomEvent, RoomKit, SMSChannel,
 from roomkit.channels.agent import Agent
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.providers.sms.mock import MockSMSProvider
-from roomkit_nodes import AgentHandler, AskHandler, NotifyHandler, Runs, WorkflowChannel
 
 from roomkit_graph import Condition, Edge, EventTrigger, Graph, Node, WorkflowEngine
+from roomkit_graph.roomkit import RoomRuns, room_handlers
 
 MODEL = "claude-sonnet-5-5"
 ON_CALL = "+15550109999"
@@ -85,8 +85,8 @@ def triage_graph() -> Graph:
                     "Write the SMS answering this customer, under 300 characters.\n"
                     "They wrote: {{trigger.text}}\n"
                     "Triage: {{steps.classify.summary}} "
-                    "(urgent: {{steps.classify.data.urgent}}). When urgent, an engineer "
-                    "is on it now."
+                    "(urgent: {{steps.classify.data.urgent}}).\n"
+                    'On-call engineer\'s reply: {{steps.page.text | default("not paged")}}'
                 ),
             },
         ),
@@ -115,7 +115,6 @@ async def setup_kit() -> RoomKit:
     )
     kit = RoomKit()
     kit.register_channel(SMSChannel("sms", provider=PrintingSMSProvider()))
-    kit.register_channel(WorkflowChannel())
     kit.register_channel(
         Agent("triage", provider=provider, role="Support triage", description="Sorts requests.")
     )
@@ -140,12 +139,8 @@ async def setup_kit() -> RoomKit:
 async def main() -> None:
     kit = await setup_kit()
     graph = triage_graph()
-    handlers = {
-        "agent": AgentHandler(kit),
-        "human": AskHandler(kit),
-        "notification": NotifyHandler(kit),
-    }
-    runs = Runs()
+    handlers = room_handlers(kit)
+    runs = RoomRuns()
 
     async def sms_in(sender: str, text: str) -> None:
         """What an SMS webhook does: hand the message to RoomKit, then to the runs."""

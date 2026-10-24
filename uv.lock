@@ -685,11 +685,15 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "roomkit" },
     { name = "ruff" },
     { name = "ty" },
 ]
 examples = [
     { name = "roomkit", extra = ["anthropic"] },
+]
+roomkit = [
+    { name = "roomkit" },
 ]
 
 [package.metadata]
@@ -699,11 +703,14 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "roomkit", marker = "extra == 'dev'", specifier = ">=0.108.0" },
+    { name = "roomkit", marker = "extra == 'examples'", specifier = ">=0.108.0" },
+    { name = "roomkit", marker = "extra == 'roomkit'", specifier = ">=0.108.0" },
     { name = "roomkit", extras = ["anthropic"], marker = "extra == 'examples'", specifier = ">=0.108.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.26" },
 ]
-provides-extras = ["dev", "examples"]
+provides-extras = ["dev", "examples", "roomkit"]
 
 [[package]]
 name = "ruff"

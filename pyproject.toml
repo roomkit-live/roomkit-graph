@@ -25,8 +25,9 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-# The examples run RoomKit agents; the engine itself needs nothing.
-examples = ["roomkit[anthropic]>=0.108.0"]
+# roomkit_graph.roomkit runs nodes with RoomKit; the engine itself needs nothing.
+roomkit = ["roomkit>=0.108.0"]
+examples = ["roomkit-graph[roomkit]", "roomkit[anthropic]>=0.108.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -35,6 +36,7 @@ dev = [
     "ty>=0.0.26",
     "bandit>=1.7",
     "pre-commit>=3.8",
+    "roomkit-graph[roomkit]",
 ]
 
 [project.urls]

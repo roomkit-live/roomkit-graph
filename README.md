@@ -6,20 +6,23 @@ serializable conditions, pauses on steps that wait for a person, and resumes lat
 in the same process or another one.
 
 The engine does the walking. The steps that do real work — calling an AI agent,
-asking a person, sending a notification — run through handlers your application
-provides. roomkit-graph has no runtime dependencies.
+asking a person, sending a notification — run through handlers: your own, or
+those of `roomkit_graph.roomkit`, which run them with
+[RoomKit](https://github.com/roomkit-live/roomkit) agents and rooms. The engine
+has no runtime dependencies.
 
 ## Install
 
 ```bash
-pip install roomkit-graph      # or: uv add roomkit-graph
+pip install roomkit-graph              # the engine alone
+pip install "roomkit-graph[roomkit]"   # with the RoomKit handlers
 ```
 
 ## What the engine does, what you bring
 
 | roomkit-graph provides | Your application provides |
 |---|---|
-| Graph model, validation, JSON round-trip | Handlers for `agent`, `human`, `notification`, `orchestration` and any custom node type |
+| Graph model, validation, JSON round-trip | Handlers for `agent`, `human`, `notification`, `orchestration` and any custom node type — or [RoomKit's](#with-roomkit) for the first three |
 | Condition DSL for edge routing, also serializable | Where trigger data comes from: webhooks, schedules and events are descriptions, the engine fires nothing |
 | `{{...}}` templates over previous step outputs | Where the engine state is stored between a pause and a resume |
 | Step-by-step execution, pause and resume | Real delays, retries and timeouts |
@@ -143,9 +146,19 @@ Three reserved prefixes shorten the common reads:
 |---|---|
 | `trigger.<path>` | The trigger data (`trigger.title`) |
 | `steps.<id>.<path>` | A node's output without the `output` hop (`steps.triage.severity`) |
-| `input.<path>` | In a node's templates: its predecessor's output. In a node's outgoing edge conditions: that node's own output |
+| `input.<path>` | In a node's templates: the output of the node the run came from — the branch taken at a merge, what sent the run back in a loop. In a node's outgoing edge conditions: that node's own output |
 
 A node named `trigger`, `steps` or `input` is shadowed by these prefixes.
+
+A path that is not there raises `TemplateError`. When it may legitimately be
+missing — a step on the other branch, a loop's first pass — `default(...)` names
+what stands in for it, as a JSON value:
+
+```
+{{steps.page.text | default("not paged")}}
+{{input.feedback | default("none yet")}}
+{{steps.count.total | default(0)}}
+```
 
 `resolve()` always returns a string. `resolve_value()` keeps the type when the
 template is exactly one placeholder: `"{{triage.output.tags}}"` returns the list,
@@ -328,19 +341,34 @@ into `start`, no edge out of an `end`, every node reachable from `start`.
 
 ## With RoomKit
 
-roomkit-graph was written to run multi-step processes in
-[RoomKit](https://github.com/roomkit-live/roomkit) applications, but it does not
-import RoomKit and ships no RoomKit handlers. The handlers are where the two meet:
+`roomkit_graph.roomkit` (`pip install "roomkit-graph[roomkit]"`) runs nodes with
+[RoomKit](https://github.com/roomkit-live/roomkit). Every run works in a room,
+named by its trigger data's `room_id`:
 
-- an `agent` handler sends the resolved prompt to an AI channel in a room and
-  returns the reply;
-- a `human` handler posts the question in the room and returns `waiting`; the code
-  that receives the person's answer calls `engine.resume()`;
-- a `notification` handler delivers through a transport channel;
-- `engine.to_dict()` is stored next to the room, so a paused run survives a restart.
+| Node | Config | What happens |
+|---|---|---|
+| `agent` | `agent`, `prompt`, optional `structured`, `room` | The RoomKit agent works on the prompt in a child room of the run's room; the output is `{"text": ...}`, or with `structured` the agent's `submit_result` call (`{"status", "summary", "data", ...}`) |
+| `notification` | `text`, optional `room` | The text is sent into the room, so its transports deliver it — an SMS to the room's correspondent |
+| `human` | `text`, optional `room` | Sent the same way, then the run pauses until the answer arrives in that room |
 
-[`examples/roomkit_nodes.py`](examples/roomkit_nodes.py) is a working set of
-such handlers, used by the RoomKit examples below.
+```python
+from roomkit_graph.roomkit import RoomRuns, room_handlers
+
+runs = RoomRuns()
+engine = WorkflowEngine(graph, handlers=room_handlers(kit))
+await runs.start(engine, {"room_id": room.id, "topic": "..."})
+
+# Where your app receives a message (an SMS webhook, say):
+result = await kit.process_inbound(message)
+await runs.answer(result.event.room_id, {"text": message.content.body})
+```
+
+`RoomRuns.answer()` resumes the run paused on that room, if any. It holds paused
+runs in memory; to survive a restart, store `engine.to_dict()` and rebuild with
+`WorkflowEngine.from_dict()`.
+
+The workflow speaks in a room through a `WorkflowChannel`, registered and
+attached on first use: unlike an agent attached to the room, it answers nothing.
 
 ## Examples
 
@@ -354,6 +382,7 @@ uv run python examples/streaming.py          # the four stream modes and emit()
 # With RoomKit agents: uv sync --extra examples, and ANTHROPIC_API_KEY set
 uv run python examples/research_crew.py "AI agents in customer support"
 uv run python examples/support_triage.py     # SMS in, page the on-call, SMS out
+uv run python examples/review_loop.py        # draft, editor's feedback by SMS, until OK
 ```
 
 ## Status

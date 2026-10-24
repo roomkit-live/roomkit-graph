@@ -7,7 +7,7 @@ The CrewAI quickstart as a roomkit-graph workflow, run by RoomKit agents:
 Each agent has a role and a description, like a CrewAI agent's role and
 backstory. The graph sets the order, as a CrewAI sequential process does.
 RoomKit runs each agent in a child room of the run's room and hands its
-answer back to the graph (``AgentHandler`` in ``roomkit_nodes.py``).
+answer back to the graph (``roomkit_graph.roomkit``).
 
 Requires:
     uv sync --extra examples
@@ -28,9 +28,9 @@ from pydantic import SecretStr
 from roomkit import RoomKit
 from roomkit.channels.agent import Agent
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
-from roomkit_nodes import AgentHandler
 
 from roomkit_graph import Edge, Graph, ManualTrigger, Node, WorkflowEngine
+from roomkit_graph.roomkit import room_handlers
 
 MODEL = "claude-sonnet-5-5"
 
@@ -94,7 +94,7 @@ async def main(topic: str) -> None:
     room = await kit.create_room()
 
     try:
-        engine = WorkflowEngine(crew_graph(), handlers={"agent": AgentHandler(kit)})
+        engine = WorkflowEngine(crew_graph(), handlers=room_handlers(kit))
         context = await engine.run(trigger_data={"room_id": room.id, "topic": topic})
         print(context.get("write.output.text"))
     finally:
