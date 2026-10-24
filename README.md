@@ -1,154 +1,237 @@
 # roomkit-graph
 
-Workflow graph engine for [RoomKit](https://github.com/roomkit-live/roomkit). Define multi-step workflows as directed graphs and execute them inside RoomKit rooms — with AI agents, human decisions, notifications, and data transforms.
+A workflow graph engine for Python. A workflow is a directed graph of nodes and
+edges, stored as plain data (JSON); the engine walks it step by step, routes on
+serializable conditions, pauses on steps that wait for a person, and resumes later,
+in the same process or another one.
 
-Each workflow run is a RoomKit room. Steps produce messages. The full execution history is a conversation you can read, audit, and interact with.
+The engine does the walking. The steps that do real work — calling an AI agent,
+asking a person, sending a notification — run through handlers your application
+provides. roomkit-graph has no runtime dependencies.
 
-## Why
+## Install
 
-RoomKit gives you rooms, agents, orchestration, hooks, and persistence. But there's no way to compose them into multi-step business processes — "when X happens, do A, then based on the result do B or C, wait for approval, then notify."
+```bash
+pip install roomkit-graph      # or: uv add roomkit-graph
+```
 
-Existing workflow engines (n8n, Airflow, Temporal) are full platforms. `roomkit-graph` is a library you embed in your app.
+## What the engine does, what you bring
 
-## Design Principles
-
-- **Conversation-native** — each run IS a room. Steps produce events. Open a run and read it like a chat thread.
-- **AI-first** — Agent and Orchestration are first-class nodes, not HTTP calls to an LLM.
-- **Serializable** — graphs are data (JSON), not code. Build UIs, store in databases, version and share.
-- **RoomKit-native** — uses rooms, channels, hooks, ConversationState, delegation. No reinvention.
-- **Lightweight** — depends on `roomkit`, nothing else. No separate services.
-
-## Node Types
-
-| Node | Purpose |
+| roomkit-graph provides | Your application provides |
 |---|---|
-| **Start** | Entry point — receives trigger payload |
-| **End** | Marks workflow complete |
-| **Agent** | Run an AI agent (any RoomKit-supported provider) |
-| **Orchestration** | Run a multi-agent strategy (Pipeline, Swarm, Supervisor, Loop) |
-| **Human** | Pause workflow, wait for human input or approval |
-| **Notification** | Send a notification (Slack, email, etc.) and continue |
-| **Function** | Transform data, delays, or custom Python logic |
-| **Parallel** | Run children concurrently, join when all/any complete |
-| **Condition** | Evaluate a condition and store the boolean result for downstream branching |
-| **Switch** | Read a context value for multi-way branching on outgoing edges |
+| Graph model, validation, JSON round-trip | Handlers for `agent`, `human`, `notification`, `orchestration` and any custom node type |
+| Condition DSL for edge routing, also serializable | Where trigger data comes from: webhooks, schedules and events are descriptions, the engine fires nothing |
+| `{{...}}` templates over previous step outputs | Where the engine state is stored between a pause and a resume |
+| Step-by-step execution, pause and resume | Real delays, retries and timeouts |
+| State serialization (`to_dict` / `from_dict`) | |
+| Streaming of execution events | |
+| Built-in `start`, `end`, `function`, `condition`, `switch`, `log`, `parallel` nodes | |
 
-## Quick Example
+## Quick start
+
+Two handlers stand in for an AI agent and a notifier; the graph routes on what
+the first one returns.
 
 ```python
-from roomkit_graph import Graph, Node, Edge, Condition, WebhookTrigger
+import asyncio
 
-graph = Graph(
-    id="bug-triage",
-    name="Bug Triage",
-    trigger=WebhookTrigger(source_type="github"),
+from roomkit_graph import (
+    Condition, Edge, Graph, Node, NodeHandler, NodeResult, WebhookTrigger, WorkflowEngine,
 )
 
+
+class TriageHandler(NodeHandler):
+    """Stands in for an AI agent: replace the body with your model call."""
+
+    async def execute(self, node, context, engine):
+        prompt = engine.template_resolver.resolve(node.config["prompt"])
+        severity = "critical" if "down" in prompt.lower() else "low"
+        return NodeResult(output={"severity": severity})
+
+
+class NotifyHandler(NodeHandler):
+    """Stands in for Slack, email or SMS: replace the body with your sender."""
+
+    async def execute(self, node, context, engine):
+        message = engine.template_resolver.resolve(node.config["template"])
+        print(f"[notify] {message}")
+        return NodeResult(output={"sent": message})
+
+
+graph = Graph(id="bug-triage", name="Bug Triage", trigger=WebhookTrigger(source_type="github"))
 graph.add_nodes(
     Node("start", type="start"),
-    Node("triage", type="agent", config={
-        "agent_id": "triage-agent",
-        "prompt_template": "Triage this issue. Classify severity.\n\n{{start.output.input}}"
-    }),
-    Node("escalate", type="notification", config={
-        "channel": "slack",
-        "template": "Critical bug: {{triage.output.title}}"
-    }),
-    Node("assign", type="agent", config={
-        "agent_id": "labeler-agent",
-        "prompt_template": "Assign labels and team:\n\n{{triage.output}}"
-    }),
+    Node("triage", type="agent", config={"prompt": "Classify: {{trigger.title}}"}),
+    Node("page", type="notification", config={"template": "Critical: {{trigger.title}}"}),
     Node("end", type="end"),
 )
-
 graph.add_edges(
     Edge("start", "triage"),
-    Edge("triage", "escalate",
-         condition=Condition.field("triage.output.severity").equals("critical")),
-    Edge("triage", "assign",
-         condition=Condition.otherwise()),
-    Edge("escalate", "end"),
-    Edge("assign", "end"),
+    Edge("triage", "page", condition=Condition.field("input.severity").equals("critical")),
+    Edge("triage", "end", condition=Condition.otherwise()),
+    Edge("page", "end"),
 )
-
-# Validate before running
 graph.validate_or_raise()
+
+
+async def main():
+    engine = WorkflowEngine(
+        graph, handlers={"agent": TriageHandler(), "notification": NotifyHandler()}
+    )
+    context = await engine.run(trigger_data={"title": "Checkout is down"})
+    print(context.get("triage.output.severity"))  # critical
+
+
+asyncio.run(main())
 ```
 
-## Running a Workflow
+The graph is data: `graph.to_dict()` gives JSON you can store, version or edit in
+a UI, and `Graph.from_dict(...)` reads it back.
 
-The `WorkflowEngine` drives execution step by step. Built-in handlers cover start, end, function, condition, switch, log, and parallel nodes. Provide handlers for your app-specific node types:
+## Node types
+
+| Type | Built in | What it does |
+|---|---|---|
+| `start` | yes | Entry point. The trigger data is its output |
+| `end` | yes | Completes the run |
+| `function` | yes | `set_context`, `json_transform`, `delay`, `custom` — see [Function nodes](#function-nodes) |
+| `condition` | yes | Evaluates one condition, outputs `{"result": bool}`. A missing or invalid condition gives `False` |
+| `switch` | yes | Reads a context path, outputs `{"value": ...}` for outgoing edges to match |
+| `log` | yes | Copies context paths into its output, for inspection |
+| `parallel` | yes | Runs its child nodes concurrently — see [Parallel nodes](#parallel-nodes) |
+| `agent` | no | Yours: run an AI agent |
+| `orchestration` | no | Yours: run several agents together |
+| `human` | no | Yours: ask a person, usually returning `waiting` |
+| `notification` | no | Yours: send a message and continue |
+
+Any other string is a valid node type as long as a handler is registered for it.
+A node whose type has no handler fails the run with `ExecutionError`.
+
+## Writing a handler
+
+A handler implements one method and returns a `NodeResult`:
 
 ```python
-from roomkit_graph import WorkflowEngine, NodeHandler, NodeResult
-
-class AgentHandler(NodeHandler):
-    async def execute(self, node, context, engine):
-        # Your agent execution logic here
-        result = await call_agent(node.config["agent_id"], context)
-        return NodeResult(output=result, status="completed")
-
-class HumanHandler(NodeHandler):
-    async def execute(self, node, context, engine):
-        return NodeResult(output=None, status="waiting")
-
-# Run to completion
-engine = WorkflowEngine(graph, handlers={
-    "agent": AgentHandler(),
-    "human": HumanHandler(),
-    "notification": NotificationHandler(),
-})
-ctx = await engine.run(trigger_data={"issue_id": "123"})
+class MyHandler(NodeHandler):
+    async def execute(self, node, context, engine) -> NodeResult:
+        ...
 ```
 
-### Step-by-Step Execution
+- `node.config` holds the node's settings from the graph.
+- `engine.template_resolver.resolve(text)` fills `{{...}}` templates from the context.
+- `NodeResult.output` is stored as the node's output, readable by later steps.
+- `NodeResult.status` is `"completed"` (default, the engine moves on), `"waiting"`
+  (the run pauses on this node) or `"failed"` (the run stops with `ExecutionError`,
+  carrying `NodeResult.error`).
+
+Handlers are passed per engine and override the built-in ones for the same type:
+`WorkflowEngine(graph, handlers={"agent": MyHandler()})`.
+
+## Context and templates
+
+Each node's output is stored under `<node_id>.output`. Templates and conditions
+read it with dot paths:
+
+```
+{{triage.output.severity}}       # a field of a previous step's output
+{{start.output.input.title}}     # the trigger data, long form
+```
+
+Three reserved prefixes shorten the common reads:
+
+| Prefix | Reads |
+|---|---|
+| `trigger.<path>` | The trigger data (`trigger.title`) |
+| `steps.<id>.<path>` | A node's output without the `output` hop (`steps.triage.severity`) |
+| `input.<path>` | In a node's templates: its predecessor's output. In a node's outgoing edge conditions: that node's own output |
+
+A node named `trigger`, `steps` or `input` is shadowed by these prefixes.
+
+`resolve()` always returns a string. `resolve_value()` keeps the type when the
+template is exactly one placeholder: `"{{triage.output.tags}}"` returns the list,
+`"Tags: {{triage.output.tags}}"` returns a string.
+
+## Edges and conditions
 
 ```python
+Condition.field("triage.output.severity").equals("critical")
+Condition.field("triage.output.severity").not_equals("low")
+Condition.field("extract.output.amount").gt(1000)          # also .lt()
+Condition.field("extract.output.tags").contains("urgent")
+Condition.field("extract.output.status").in_(["approved", "accepted"])  # also .not_in()
+Condition.field("review.output.manager").exists()
+
+Condition.all_(cond_a, cond_b)
+Condition.any_(cond_a, cond_b)
+Condition.not_(cond_a)
+Condition.otherwise()
+```
+
+When a node has several outgoing edges, the engine picks, in this order:
+
+1. the first conditional edge, in definition order, whose condition is true;
+2. otherwise the edge with no condition;
+3. otherwise the `Condition.otherwise()` edge.
+
+If none applies, the run stops with `NoValidTransitionError`. A node other than
+`end` with no outgoing edge completes the run.
+
+Edges may point back to an earlier node (a revise → review loop). The engine has
+no iteration limit; a loop ends when a condition sends the run elsewhere.
+
+Conditions serialize with the graph:
+
+```json
+{"type": "field", "path": "triage.output.severity", "op": "eq", "value": "critical"}
+{"type": "all", "conditions": [
+    {"type": "field", "path": "extract.output.amount", "op": "gt", "value": 1000},
+    {"type": "field", "path": "extract.output.category", "op": "eq", "value": "travel"}
+]}
+{"type": "otherwise"}
+```
+
+## Pause and resume
+
+A handler that returns `status="waiting"` pauses the run on its node. The engine
+state serializes to JSON, so the answer can arrive hours later in another process:
+
+```python
+class ApprovalHandler(NodeHandler):
+    """Asks a person, then pauses: the answer comes back through resume()."""
+
+    async def execute(self, node, context, engine):
+        send_question(engine.template_resolver.resolve(node.config["question"]))
+        return NodeResult(status="waiting")
+
+
 engine = WorkflowEngine(graph, handlers=handlers)
-await engine.start(trigger_data={"issue_id": "123"})
+await engine.run(trigger_data={"amount": 120})
+engine.waiting                    # True: paused on engine.current_node_id, "approve"
+save(engine.to_dict())            # {"context": {...}, "current_node_id": ..., "waiting": True}
 
-while await engine.step():
-    print(f"At node: {engine.current_node_id}")
-```
-
-### Pause and Resume (Human-in-the-Loop)
-
-When a handler returns `status="waiting"`, the engine pauses. Resume with external input:
-
-```python
-# Engine pauses at a human node...
-await engine.resume("review", {"action": "approve", "feedback": "Looks good"})
-
-# resume() stores the input and advances past the waiting node.
-# Call step() to continue execution.
+# Later, possibly in another process
+engine = WorkflowEngine.from_dict(graph, load(), handlers=handlers)
+await engine.resume("approve", {"action": "approve"})
 while await engine.step():
     pass
 ```
 
-### Persist and Restore Engine State
+`resume(node_id, data)` stores `data` as the waiting node's output and moves to
+the next node; edges leaving the waiting node route on it
+(`Condition.field("approve.output.action").equals("approve")`).
 
-Serialize engine state for cross-process pause/resume (e.g. human-in-the-loop over HTTP):
+`engine.start()` then `engine.step()` run one node at a time; `engine.run()` is
+both, until the run completes or pauses.
 
-```python
-# Save
-state = engine.to_dict()
-# state = {"context": {...}, "current_node_id": "review", "waiting": True}
-save_to_db(state)
+## Streaming execution events
 
-# Restore later (possibly in a different process)
-state = load_from_db()
-engine = WorkflowEngine.from_dict(graph, state, handlers=handlers)
-await engine.resume("review", {"action": "approve"})
-```
-
-### Streaming Execution Events
-
-`engine.stream()` yields typed events as the workflow runs — progress for dashboards, webhooks, or audit logs without mutating the graph. Pick one or more modes:
+`engine.stream()` yields typed events as the run progresses — for dashboards,
+webhooks or audit logs. Pick one or more modes:
 
 | Mode | Emitted when | Payload |
 |---|---|---|
-| `values` | Before start + after each step | Full context snapshot |
-| `updates` | After each step | Delta keyed by node_id written that step |
+| `values` | Before start and after each step | Full context snapshot |
+| `updates` | After each step | Outputs written that step, keyed by node id |
 | `lifecycle` | Before and after each node | `{phase, node_id, status}` (status: `completed` / `waiting` / `failed`) |
 | `custom` | When a handler calls `engine.emit(...)` | Handler-defined payload |
 
@@ -160,237 +243,123 @@ async for event in engine.stream(trigger_data, modes=("updates", "lifecycle")):
         await websocket.send_json(event["payload"])
 ```
 
-Handlers can emit intra-node progress via `engine.emit(payload)`. Outside a `stream()` context the call is a no-op, so handlers stay agnostic to execution mode:
+A handler reports progress inside its node with `engine.emit(payload)`; outside
+`stream()` the call does nothing, so the same handler works in both modes.
 
-```python
-class LLMAgentHandler(NodeHandler):
-    async def execute(self, node, context, engine):
-        for call in tool_calls:
-            engine.emit({"kind": "tool_call", "tool": call.name})
-            ...
-        return NodeResult(output={"response": ...}, status="completed")
-```
+When a handler fails, a last `lifecycle` event with `status="failed"` is yielded
+before `ExecutionError` propagates. When a node waits, the stream ends; after
+`resume(...)`, start a new `stream()`.
 
-On handler failure, a final `lifecycle` event with `status="failed"` is yielded before `ExecutionError` propagates through the iterator. On `waiting`, the stream terminates cleanly — resume via `engine.resume(...)` then start a fresh `stream()`.
+## Parallel nodes
 
-## More Examples
-
-### Content Review with Human-in-the-Loop
-
-AI drafts content, human reviews, revision loop until approved:
-
-```python
-graph = Graph(id="content-review", name="Content Review", trigger=ManualTrigger())
-
-graph.add_nodes(
-    Node("start", type="start"),
-    Node("draft", type="agent", config={
-        "agent_id": "writer-agent",
-        "prompt_template": "Write a blog post about: {{start.output.input.topic}}"
-    }),
-    Node("review", type="human", config={
-        "prompt": "Review this draft. Approve or reject with feedback.",
-        "actions": ["approve", "reject"],
-    }),
-    Node("revise", type="agent", config={
-        "agent_id": "writer-agent",
-        "prompt_template": "Revise based on feedback:\n{{review.output.feedback}}"
-    }),
-    Node("publish", type="notification", config={
-        "channel": "slack",
-        "template": "Published: {{draft.output.title}}"
-    }),
-    Node("end", type="end"),
-)
-
-graph.add_edges(
-    Edge("start", "draft"),
-    Edge("draft", "review"),
-    Edge("review", "publish",
-         condition=Condition.field("review.output.action").equals("approve")),
-    Edge("review", "revise",
-         condition=Condition.field("review.output.action").equals("reject")),
-    Edge("revise", "review"),  # loop back
-    Edge("publish", "end"),
-)
-```
-
-### Parallel Execution
-
-Run multiple steps concurrently and join. The built-in `ParallelHandler` executes all child nodes via `asyncio.TaskGroup` and aggregates results as `{child_id: output}`:
+A `parallel` node runs the nodes that name it as `parent`, concurrently, and
+continues once all of them are done:
 
 ```python
 graph.add_nodes(
-    Node("start", type="start"),
-    Node("analyze", type="agent", config={"agent_id": "analyzer"}),
-    Node("checks", type="parallel", config={"join": "all"}),
-    Node("security", type="agent", config={"agent_id": "security-agent"},
-         parent="checks"),
-    Node("compliance", type="agent", config={"agent_id": "compliance-agent"},
-         parent="checks"),
-    Node("notify", type="notification", config={"channel": "slack"},
-         parent="checks"),
-    Node("summarize", type="agent", config={"agent_id": "summarizer"}),
-    Node("end", type="end"),
+    Node("checks", type="parallel"),
+    Node("security", type="agent", config={...}, parent="checks"),
+    Node("compliance", type="agent", config={...}, parent="checks"),
+    Node("summarize", type="agent", config={...}),
 )
+graph.add_edges(Edge("analyze", "checks"), Edge("checks", "summarize"))
 
-graph.add_edges(
-    Edge("start", "analyze"),
-    Edge("analyze", "checks"),
-    Edge("checks", "summarize"),
-    Edge("summarize", "end"),
-)
-
-# After execution, each child's output is in context:
-#   ctx.get("security.output")    → individual child result
-#   ctx.get("compliance.output")  → individual child result
-#   ctx.get("checks.output")      → {"security": ..., "compliance": ..., "notify": ...}
+# After the parallel node:
+#   security.output    → that child's output
+#   checks.output      → {"security": ..., "compliance": ...}
 ```
 
-### Function Nodes
+Children are run by their parallel node only: give them no edges. If one child
+fails, the parallel node fails. A child cannot pause: `waiting` inside a parallel
+node is a failure. Waiting for the first child only (`join: "any"`) is not
+implemented.
 
-Transform data or run custom logic between steps:
+## Function nodes
 
 ```python
-# Data transform
+# Write fixed values as the node's output
+Node("tag", type="function", config={
+    "action": "set_context", "values": {"status": "in_progress"},
+})
+
+# Build a structure from templates (types kept for single placeholders)
 Node("reshape", type="function", config={
     "action": "json_transform",
-    "template": {
-        "name": "{{extract.output.first}} {{extract.output.last}}",
-        "priority": "{{extract.output.tier}}"
-    }
+    "template": {"name": "{{extract.output.first}} {{extract.output.last}}"},
 })
 
-# Set context values
-Node("tag", type="function", config={
-    "action": "set_context",
-    "values": {"status": "in_progress", "assigned": True}
-})
-
-# Delay
-Node("wait", type="function", config={
-    "action": "delay",
-    "duration": "30m"
-})
-
-# Custom Python function (registered at runtime)
-from roomkit_graph import FunctionRegistry, FunctionHandler
-
-registry = FunctionRegistry()
-
-@registry.function("calculate_priority")
-async def calculate_priority(context, config):
-    severity = context.get("triage.output.severity")
-    tier = context.get("enrich.output.tier")
-    return {"priority": "P1" if severity == "critical" and tier == "enterprise" else "P2"}
-
+# Call your own function by name
 Node("prioritize", type="function", config={
-    "action": "custom",
-    "function": "calculate_priority"
-})
-
-# Wire registry to the engine
-engine = WorkflowEngine(graph, handlers={
-    "function": FunctionHandler(registry=registry),
-    # ... other handlers
+    "action": "custom", "function": "calculate_priority",
 })
 ```
 
-## Conditions
-
-Serializable condition DSL for edge routing:
+`custom` functions are looked up in `graph_registry`:
 
 ```python
-# Field comparisons
-Condition.field("triage.output.severity").equals("critical")
-Condition.field("extract.output.amount").gt(1000)
-Condition.field("extract.output.tags").contains("urgent")
-Condition.field("extract.output.status").in_(["approved", "accepted"])
-Condition.field("review.output.manager").exists()
+from roomkit_graph import graph_registry
 
-# Composites
-Condition.all_(
-    Condition.field("triage.output.severity").equals("critical"),
-    Condition.field("triage.output.team").equals("backend"),
-)
-Condition.any_(cond1, cond2)
-Condition.not_(cond)
 
-# Default fallback
-Condition.otherwise()
+@graph_registry.function("calculate_priority")
+async def calculate_priority(context, config):
+    return {"priority": "P1" if context.get("trigger.tier") == "enterprise" else "P2"}
 ```
 
-**Edge evaluation order (first-match-wins):** When a node has multiple outgoing edges, conditional edges are evaluated in definition order — the first match wins. If no condition matches, an unconditional edge is used as default. An `otherwise` edge acts as an explicit catch-all.
+To keep a set of functions apart — per tenant, per test — pass your own
+registry instead: `handlers={"function": FunctionHandler(registry=FunctionRegistry())}`.
 
-All conditions serialize to JSON for storage and UI builders:
+The built-in `delay` action does not wait: it outputs `{"delayed": "<duration>"}`.
+A real delay — usually a pause the application resumes later — belongs in your
+own handler.
 
-```json
-{"type": "field", "path": "triage.output.severity", "op": "eq", "value": "critical"}
-{"type": "all", "conditions": [
-    {"type": "field", "path": "extract.output.amount", "op": "gt", "value": 1000},
-    {"type": "field", "path": "extract.output.category", "op": "eq", "value": "travel"}
-]}
-{"type": "otherwise"}
+## Triggers
+
+`WebhookTrigger`, `ScheduledTrigger`, `EventTrigger` and `ManualTrigger` describe
+how a workflow is meant to start, and serialize with the graph. The engine does
+not listen to anything: your application reads `graph.trigger`, receives the
+webhook or runs the schedule, and calls `engine.run(trigger_data=...)`.
+
+## Validation
+
+`graph.validate()` returns a list of errors (empty when valid);
+`graph.validate_or_raise()` raises `GraphValidationError`. It checks: exactly one
+`start` node, at least one `end` node, edges pointing to existing nodes, no edge
+into `start`, no edge out of an `end`, every node reachable from `start`.
+
+## With RoomKit
+
+roomkit-graph was written to run multi-step processes in
+[RoomKit](https://github.com/roomkit-live/roomkit) applications, but it does not
+import RoomKit and ships no RoomKit handlers. The handlers are where the two meet:
+
+- an `agent` handler sends the resolved prompt to an AI channel in a room and
+  returns the reply;
+- a `human` handler posts the question in the room and returns `waiting`; the code
+  that receives the person's answer calls `engine.resume()`;
+- a `notification` handler delivers through a transport channel;
+- `engine.to_dict()` is stored next to the room, so a paused run survives a restart.
+
+[`examples/roomkit_nodes.py`](examples/roomkit_nodes.py) is a working set of
+such handlers, used by the RoomKit examples below.
+
+## Examples
+
+Runnable examples are in [`examples/`](examples/):
+
+```bash
+uv run python examples/graph_definition.py   # build, validate, serialize
+uv run python examples/workflow_engine.py    # conditions, templates, execution
+uv run python examples/streaming.py          # the four stream modes and emit()
+
+# With RoomKit agents: uv sync --extra examples, and ANTHROPIC_API_KEY set
+uv run python examples/research_crew.py "AI agents in customer support"
+uv run python examples/support_triage.py     # SMS in, page the on-call, SMS out
 ```
-
-## Graph Validation
-
-Validate graph structure before execution:
-
-```python
-# Returns list of error strings (empty = valid)
-errors = graph.validate()
-
-# Or raise GraphValidationError directly
-graph.validate_or_raise()
-```
-
-Checks performed: single start node, at least one end node, valid edge references, start has no incoming edges, end nodes have no outgoing edges, all nodes reachable from start.
-
-## Cross-Step Context
-
-Steps reference previous outputs with `{{node_id.output.field}}` templates:
-
-```
-{{start.output.input}}               # trigger payload
-{{start.output.input.title}}         # nested field from trigger
-{{triage.output.severity}}           # previous step output
-{{draft.output.title}}               # any upstream node's output
-```
-
-Resolved at runtime from the workflow context before each step executes.
-
-### Structured Passthrough
-
-When using `resolve_value()` (e.g. in `json_transform`), a template that is exactly one `{{path}}` placeholder returns the raw value — dicts, lists, ints, bools pass through without stringification:
-
-```python
-# If triage.output.metadata is {"tags": ["auth", "login"], "priority": 1}
-resolve_value("{{triage.output.metadata}}")        # → dict (raw)
-resolve_value("Meta: {{triage.output.metadata}}")  # → "Meta: {'tags': ...}" (string)
-```
-
-This enables passing structured objects between steps without losing type information.
-
-## How It Maps to RoomKit
-
-| roomkit-graph | RoomKit primitive |
-|---|---|
-| Workflow run | Room |
-| Current step | `ConversationState.phase` |
-| Step context | `ConversationState.context` |
-| Agent step | Agent channel + `on_event()` |
-| Orchestration step | `kit.delegate()` (child room) |
-| Human step | Room pause + inbound message |
-| Notification step | `kit.deliver()` |
-| Parallel step | Multiple `kit.delegate()` + join |
-| Transitions | `ConversationRouter` + hooks |
-| Audit trail | Room events |
-| Persistence | `ConversationStore` |
 
 ## Status
 
-Alpha. The 0.1.x line is the first public release; the API may evolve between minor versions while the engine, streaming, and persistence surface settle. Breaking changes will be called out in the [changelog](CHANGELOG.md).
+Alpha. The API may change between minor versions until 1.0; breaking changes are
+listed in the [changelog](CHANGELOG.md).
 
 ## License
 

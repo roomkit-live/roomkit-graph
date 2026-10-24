@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `WorkflowEngine.waiting` — whether the run is paused on `current_node_id`
+  until `resume()`. It was only readable through `to_dict()["waiting"]`.
+- Examples run by RoomKit agents, behind a new `examples` extra:
+  `research_crew.py` (a researcher then a writer, the CrewAI quickstart) and
+  `support_triage.py` (an SMS starts a run, urgent ones page the on-call by SMS
+  and wait for the reply). `examples/roomkit_nodes.py` holds the RoomKit
+  handlers they share.
+
+### Fixed
+- A `custom` function node run by the default `FunctionHandler` looks up
+  `graph_registry`. It failed with "No function registry configured", so a
+  function registered on the exported `graph_registry` was never found.
+
+### Removed
+- The `roomkit` runtime dependency: no module imports it since the
+  `GraphOrchestration` removal, and installing `roomkit-graph` no longer pulls
+  RoomKit in. Applications that use both declare `roomkit` themselves.
+- The `httpx` extra: nothing in the package uses it.
+
+### Changed
+- README rewritten to describe what the engine does and what the application's
+  handlers bring: no RoomKit handlers ship, triggers start nothing, the built-in
+  `delay` does not wait, `custom` functions need a registry passed to
+  `FunctionHandler`, parallel nodes join on all children only.
+- A commit-msg hook and a CI check keep downstream application names out of
+  commit messages.
+
 ## [0.2.0] — 2026-07-18
 
 ### Added
