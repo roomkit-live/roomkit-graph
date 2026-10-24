@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import io
+import logging
+
 import pytest
 from roomkit import RoomKit, SMSChannel
+from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
 
-from roomkit_graph import Edge, Graph, ManualTrigger, Node, WorkflowEngine
+from roomkit_graph import Edge, Graph, ManualTrigger, Node, WorkflowEngine, verbose
 from roomkit_graph.roomkit import RoomRuns, room_handlers
 
 
@@ -110,3 +114,39 @@ async def test_runs_paused_on_one_room_are_answered_in_the_order_they_asked(kit)
     assert await runs.answer("on-call", {"text": "OK"}) is True
     assert second.current_node_id is None
     assert await runs.answer("on-call", {"text": "OK"}) is False
+
+
+@pytest.mark.parametrize("content", [True, False])
+async def test_an_agent_turn_is_logged_and_shown_without_content_at_info(kit, caplog, content):
+    caplog.set_level(logging.DEBUG, logger="roomkit_graph")
+    # Disjoint counters, as RoomKit's providers report them: the input is their sum.
+    usage = {"input_tokens": 12, "cache_read_input_tokens": 100, "output_tokens": 34}
+    answer = AIResponse(content="A short report.", usage=usage)
+    kit.register_channel(
+        Agent("writer", provider=MockAIProvider(ai_responses=[answer]), role="Report writer")
+    )
+    room = await kit.create_room()
+    graph = _one_agent_graph({"agent": "writer", "prompt": "Write about {{trigger.topic}}"})
+    out = io.StringIO()
+    handler = verbose(content=content, stream=out)
+    # verbose() stops propagation: caplog listens on the logger itself.
+    logging.getLogger("roomkit_graph").addHandler(caplog.handler)
+    try:
+        await WorkflowEngine(graph, handlers=room_handlers(kit)).run(
+            {"room_id": room.id, "topic": "graphs"}
+        )
+    finally:
+        logging.getLogger("roomkit_graph").removeHandler(caplog.handler)
+        handler.close()
+
+    done = next(
+        r.roomkit_graph for r in caplog.records if r.roomkit_graph["event"] == "agent.done"
+    )
+    assert (done["tokens_in"], done["tokens_out"], done["status"]) == (112, 34, "completed")
+    info = " ".join(r.getMessage() for r in caplog.records if r.levelno >= logging.INFO)
+    assert "graphs" not in info and "A short report" not in info
+    shown = out.getvalue()
+    assert "writer · Report writer · working…" in shown
+    assert "writer answered" in shown and "112 → 34 tokens (100 from cache)" in shown
+    assert ("asked: Write about graphs" in shown) is content
+    assert ("answer: A short report." in shown) is content

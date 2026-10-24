@@ -23,6 +23,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   commit messages.
 
 ### Added
+- `verbose()`: every run's progress on stderr as it happens — each step, each
+  agent's turn with its duration, tokens (cache included) and tools, each
+  message sent, each pause and resume — one line each, prefixed by graph and
+  run. `content=False` hides prompts, answers and message texts.
+- Run logging on the `roomkit_graph` loggers: steps, durations and pauses at
+  INFO, a failed node at WARNING, what a person or a model wrote at DEBUG
+  only. Each record carries its fields in `record.roomkit_graph`.
+- `WorkflowEngine.run_id`: a short id, new at each `start()` and kept in
+  engine state, naming the run in logs.
 - `{{path | default(<JSON value>)}}` in templates: what stands in for a path
   that is not there, instead of `TemplateError` — a step on the other branch,
   a loop's first pass.

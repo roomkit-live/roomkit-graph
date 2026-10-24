@@ -236,6 +236,38 @@ the next node; edges leaving the waiting node route on it
 `engine.start()` then `engine.step()` run one node at a time; `engine.run()` is
 both, until the run completes or pauses.
 
+## Seeing what a run does
+
+`verbose()` prints every run's progress on stderr as it happens — each step,
+each agent's turn with its duration, tokens and tools, each message sent, each
+pause:
+
+```python
+from roomkit_graph import verbose
+
+verbose()                 # content=False hides prompts, answers and message texts
+```
+
+```
+[research-crew bec462ed] ▶ research (agent)
+[research-crew bec462ed]   researcher · Senior research analyst · working…
+[research-crew bec462ed]   asked: Research AI agents in customer support. List the ten most…
+[research-crew bec462ed]   researcher answered · 12.8 s · 84 → 1,596 tokens
+[research-crew bec462ed]   answer: **AI agents in customer support: ten things that matter** 1…
+[research-crew bec462ed] ✓ research · 13.8 s
+[support-triage b3da3aaf] ⏸ page · waiting for an answer
+```
+
+Each line names its graph and run (`engine.run_id`), so runs that interleave
+stay apart. The `roomkit_graph` logger then prints there only; `close()` on the
+handler `verbose()` returns gives it back.
+
+The same records go to the `roomkit_graph` loggers for your own handlers: steps,
+durations and pauses at INFO, a failed node at WARNING. What a person or a model
+wrote — a prompt, an answer, a message — is logged at DEBUG only. Each record
+carries its fields in `record.roomkit_graph` (`event`, `run`, `graph`, `node`,
+and the event's own: `seconds`, `tokens_in`, `tools`...).
+
 ## Streaming execution events
 
 `engine.stream()` yields typed events as the run progresses — for dashboards,

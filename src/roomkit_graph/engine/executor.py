@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
+from roomkit_graph._log import log_run
 from roomkit_graph.engine.context import WorkflowContext
 from roomkit_graph.engine.resolver import TemplateResolver
 from roomkit_graph.engine.streaming import _StreamingMixin
@@ -16,10 +20,13 @@ from roomkit_graph.handlers import (
     StartHandler,
     SwitchHandler,
 )
-from roomkit_graph.nodes.base import NodeType
+from roomkit_graph.nodes.base import Node, NodeType
 
 if TYPE_CHECKING:
     from roomkit_graph.graph import Graph
+    from roomkit_graph.handlers import NodeResult
+
+logger = logging.getLogger("roomkit_graph")
 
 
 # Built-in handlers for generic node types
@@ -64,10 +71,19 @@ class WorkflowEngine(_StreamingMixin):
         self._previous: str | None = None
         self._waiting: bool = False
         self._template_resolver: TemplateResolver | None = None
+        self._run_id = uuid4().hex[:8]
+        # For the run's log: when start() was called and how many nodes ran.
+        self._started: float | None = None
+        self._steps = 0
 
     @property
     def graph(self) -> Graph:
         return self._graph
+
+    @property
+    def run_id(self) -> str:
+        """A short id for the run, new at each ``start()``; it names the run in logs."""
+        return self._run_id
 
     @property
     def context(self) -> WorkflowContext:
@@ -105,7 +121,19 @@ class WorkflowEngine(_StreamingMixin):
             raise ValueError(msg)
         self._current = start_node.id
         self._previous = None
+        self._run_id = uuid4().hex[:8]
+        self._started = time.monotonic()
+        self._steps = 0
         self._context.set("start", {"input": trigger_data})
+        log_run(
+            logger,
+            logging.INFO,
+            self,
+            "run.start",
+            "Run %s of %s started",
+            self._run_id,
+            self._graph.id,
+        )
 
     async def step(self) -> bool:
         """Execute the current node and advance to the next.
@@ -124,6 +152,7 @@ class WorkflowEngine(_StreamingMixin):
             if handler:
                 await handler.execute(node, self._context, self)
             self._current = None
+            self._log_run_done()
             return False
 
         # If waiting for external input (human node), don't advance
@@ -140,7 +169,7 @@ class WorkflowEngine(_StreamingMixin):
         # ({{input.x}}) resolve against it.
         self._context.set_current_input(self._input_of(node.id))
 
-        result = await handler.execute(node, self._context, self)
+        result = await self._execute(node, handler)
 
         # Store output in context
         if result.output is not None:
@@ -160,6 +189,7 @@ class WorkflowEngine(_StreamingMixin):
         next_id = self.evaluate_edges(self._current)
         if next_id is None:
             self._current = None
+            self._log_run_done()
             return False
 
         self._previous = node.id
@@ -182,12 +212,76 @@ class WorkflowEngine(_StreamingMixin):
         """
         self._context.set(node_id, input_data)
         self._waiting = False
+        log_run(
+            logger, logging.INFO, self, "node.resume", "Node %s resumed", node_id, node=node_id
+        )
         # Advance past the waiting node
         if self._current == node_id:
             next_id = self.evaluate_edges(node_id)
             if next_id is not None:
                 self._previous = node_id
                 self._current = next_id
+
+    async def _execute(self, node: Node, handler: NodeHandler) -> NodeResult:
+        """Run *handler* on *node*, logging its start and how it ended."""
+        log_run(
+            logger,
+            logging.INFO,
+            self,
+            "node.start",
+            "Node %s (%s) started",
+            node.id,
+            node.type,
+            node=node.id,
+            type=str(node.type),
+        )
+        started = time.monotonic()
+        try:
+            result = await handler.execute(node, self._context, self)
+        except Exception as exc:
+            self._log_node_end(node, "failed", time.monotonic() - started, repr(exc))
+            raise
+        self._steps += 1
+        self._log_node_end(node, result.status, time.monotonic() - started, result.error)
+        return result
+
+    def _log_node_end(self, node: Node, status: str, seconds: float, error: str | None) -> None:
+        fields = {"node": node.id, "type": str(node.type), "seconds": seconds}
+        if status == "waiting":
+            message = "Node %s waits for an answer"
+            log_run(logger, logging.INFO, self, "node.wait", message, node.id, **fields)
+        elif status == "failed":
+            message = "Node %s failed: %s"
+            log_run(
+                logger,
+                logging.WARNING,
+                self,
+                "node.fail",
+                message,
+                node.id,
+                error,
+                **fields,
+                error=error,
+            )
+        else:
+            message = "Node %s completed in %.1f s"
+            log_run(
+                logger, logging.INFO, self, "node.complete", message, node.id, seconds, **fields
+            )
+
+    def _log_run_done(self) -> None:
+        seconds = time.monotonic() - self._started if self._started is not None else None
+        log_run(
+            logger,
+            logging.INFO,
+            self,
+            "run.complete",
+            "Run %s of %s completed",
+            self._run_id,
+            self._graph.id,
+            seconds=seconds,
+            steps=self._steps,
+        )
 
     def evaluate_edges(self, node_id: str) -> str | None:
         """Evaluate outgoing edges and return the next node ID, or None.
@@ -274,6 +368,7 @@ class WorkflowEngine(_StreamingMixin):
             "current_node_id": self._current,
             "previous_node_id": self._previous,
             "waiting": self._waiting,
+            "run_id": self._run_id,
         }
 
     @classmethod
@@ -289,4 +384,5 @@ class WorkflowEngine(_StreamingMixin):
         engine._current = data.get("current_node_id")
         engine._previous = data.get("previous_node_id")
         engine._waiting = data.get("waiting", False)
+        engine._run_id = data.get("run_id") or engine._run_id
         return engine

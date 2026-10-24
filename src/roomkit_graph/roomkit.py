@@ -22,6 +22,7 @@ keeps the paused ones by the room their answer will arrive in::
 from __future__ import annotations
 
 import json
+import logging
 from collections import deque
 from typing import Any
 
@@ -31,16 +32,19 @@ try:
         ChannelCategory,
         ChannelOutput,
         ChannelType,
+        EventType,
         InboundMessage,
         RoomEvent,
         RoomKit,
         TextContent,
     )
+    from roomkit.models.task import DelegatedTaskResult
     from roomkit.tasks.models import TaskStatus
 except ImportError as exc:  # pragma: no cover - only without the extra
     msg = 'roomkit_graph.roomkit needs RoomKit: pip install "roomkit-graph[roomkit]"'
     raise ImportError(msg) from exc
 
+from roomkit_graph._log import log_run
 from roomkit_graph.engine.context import WorkflowContext
 from roomkit_graph.engine.executor import WorkflowEngine
 from roomkit_graph.handlers import NodeHandler, NodeResult
@@ -48,6 +52,8 @@ from roomkit_graph.nodes.base import Node
 
 WORKFLOW_CHANNEL_ID = "workflow"
 _RUN_ROOM = "{{trigger.room_id}}"
+
+logger = logging.getLogger("roomkit_graph.roomkit")
 
 
 class WorkflowChannel(Channel):
@@ -87,16 +93,9 @@ class AgentHandler(NodeHandler):
     async def execute(
         self, node: Node, context: WorkflowContext, engine: WorkflowEngine
     ) -> NodeResult:
-        resolve = engine.template_resolver.resolve
         structured = bool(node.config.get("structured"))
-        task = await self._kit.delegate(
-            resolve(node.config.get("room", _RUN_ROOM)),
-            node.config["agent"],
-            resolve(node.config["prompt"]),
-            wait=True,
-            require_structured_result=structured,
-        )
-        result = await task.wait()
+        result = await self._delegate(node, engine, structured)
+        await self._log_done(node, engine, result)
         if result.status != TaskStatus.COMPLETED:
             return NodeResult(status="failed", error=result.error)
         if not structured:
@@ -105,6 +104,92 @@ class AgentHandler(NodeHandler):
         if payload.get("status") == "failed":
             return NodeResult(status="failed", error=payload.get("reason"))
         return NodeResult(output=payload)
+
+    async def _delegate(
+        self, node: Node, engine: WorkflowEngine, structured: bool
+    ) -> DelegatedTaskResult:
+        resolve = engine.template_resolver.resolve
+        agent_id = node.config["agent"]
+        prompt = resolve(node.config["prompt"])
+        role = getattr(self._kit.get_channel(agent_id), "role", None)
+        log_run(
+            logger,
+            logging.INFO,
+            engine,
+            "agent.start",
+            "Agent %s works on %s",
+            agent_id,
+            node.id,
+            node=node.id,
+            agent=agent_id,
+            role=role,
+        )
+        log_run(
+            logger,
+            logging.DEBUG,
+            engine,
+            "agent.prompt",
+            "Prompt to %s: %s",
+            agent_id,
+            prompt,
+            node=node.id,
+            agent=agent_id,
+            text=prompt,
+        )
+        task = await self._kit.delegate(
+            resolve(node.config.get("room", _RUN_ROOM)),
+            agent_id,
+            prompt,
+            wait=True,
+            require_structured_result=structured,
+        )
+        return await task.wait()
+
+    async def _log_done(
+        self, node: Node, engine: WorkflowEngine, result: DelegatedTaskResult
+    ) -> None:
+        """The agent's turn as RoomKit recorded it: duration, tokens, tools called."""
+        agent_id = result.agent_id
+        usage = result.metadata.get("turns", {}).get(agent_id, {}).get("ai_usage") or {}
+        # RoomKit's usage counters are disjoint: the input is their sum.
+        read = usage.get("cache_read_input_tokens") or 0
+        tokens_in = (usage.get("input_tokens") or 0) + read
+        tokens_in += usage.get("cache_creation_input_tokens") or 0
+        events = await self._kit.store.list_events(result.child_room_id, limit=1000)
+        tools = [
+            getattr(event.content, "tool_name", "?")
+            for event in events
+            if event.type == EventType.TOOL_CALL_START
+        ]
+        log_run(
+            logger,
+            logging.INFO,
+            engine,
+            "agent.done",
+            "Agent %s answered in %.1f s",
+            agent_id,
+            result.duration_ms / 1000,
+            node=node.id,
+            agent=agent_id,
+            status=str(result.status),
+            seconds=result.duration_ms / 1000,
+            tokens_in=tokens_in if usage else None,
+            tokens_cached=read,
+            tokens_out=usage.get("output_tokens"),
+            tools=tools,
+        )
+        log_run(
+            logger,
+            logging.DEBUG,
+            engine,
+            "agent.answer",
+            "Answer from %s: %s",
+            agent_id,
+            result.output,
+            node=node.id,
+            agent=agent_id,
+            text=result.output or "",
+        )
 
 
 class NotifyHandler(NodeHandler):
@@ -122,10 +207,10 @@ class NotifyHandler(NodeHandler):
     async def execute(
         self, node: Node, context: WorkflowContext, engine: WorkflowEngine
     ) -> NodeResult:
-        room_id, text = await self._send(node, engine)
+        room_id, text = await self._send(node, engine, "message.sent")
         return NodeResult(output={"room": room_id, "text": text})
 
-    async def _send(self, node: Node, engine: WorkflowEngine) -> tuple[str, str]:
+    async def _send(self, node: Node, engine: WorkflowEngine, event: str) -> tuple[str, str]:
         resolve = engine.template_resolver.resolve
         room_id = resolve(node.config.get("room", _RUN_ROOM))
         text = resolve(node.config["text"])
@@ -134,6 +219,26 @@ class NotifyHandler(NodeHandler):
         # addressed_to=[]: a message for the people in the room, no agent's turn.
         await self._kit.send_event(
             room_id, WORKFLOW_CHANNEL_ID, TextContent(body=text), addressed_to=[]
+        )
+        log_run(
+            logger,
+            logging.INFO,
+            engine,
+            event,
+            "Sent into room %s",
+            room_id,
+            node=node.id,
+            room=room_id,
+        )
+        log_run(
+            logger,
+            logging.DEBUG,
+            engine,
+            "message.text",
+            "Text sent: %s",
+            text,
+            node=node.id,
+            text=text,
         )
         return room_id, text
 
@@ -148,7 +253,7 @@ class AskHandler(NotifyHandler):
     async def execute(
         self, node: Node, context: WorkflowContext, engine: WorkflowEngine
     ) -> NodeResult:
-        room_id, _ = await self._send(node, engine)
+        room_id, _ = await self._send(node, engine, "question.sent")
         return NodeResult(output={"room": room_id}, status="waiting")
 
 

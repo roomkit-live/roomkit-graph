@@ -29,7 +29,7 @@ from roomkit import RoomKit
 from roomkit.channels.agent import Agent
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 
-from roomkit_graph import Edge, Graph, ManualTrigger, Node, WorkflowEngine
+from roomkit_graph import Edge, Graph, ManualTrigger, Node, WorkflowEngine, verbose
 from roomkit_graph.roomkit import room_handlers
 
 MODEL = "claude-sonnet-5-5"
@@ -103,6 +103,7 @@ async def main(topic: str) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
+    verbose()  # each step on stderr as it happens; content=False hides the texts
     if "ANTHROPIC_API_KEY" not in os.environ:
         sys.exit("Set ANTHROPIC_API_KEY to run this example.")
     asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else "AI agents in customer support"))

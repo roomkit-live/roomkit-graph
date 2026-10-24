@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from roomkit_graph._progress import verbose
 from roomkit_graph._version import __version__
 from roomkit_graph.edges.condition import Condition
 from roomkit_graph.edges.edge import Edge
@@ -72,6 +73,8 @@ __all__ = [
     # Registry
     "FunctionRegistry",
     "graph_registry",
+    # Progress
+    "verbose",
     # Errors
     "GraphError",
     "GraphValidationError",

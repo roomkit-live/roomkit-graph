@@ -1,0 +1,120 @@
+"""Tests for run logging and verbose() — what a run tells while it runs."""
+
+from __future__ import annotations
+
+import io
+import logging
+
+import pytest
+
+from roomkit_graph import (
+    Edge,
+    ExecutionError,
+    Graph,
+    ManualTrigger,
+    Node,
+    NodeHandler,
+    NodeResult,
+    WorkflowEngine,
+    verbose,
+)
+
+
+class _Ask(NodeHandler):
+    async def execute(self, node, context, engine):
+        return NodeResult(status="waiting")
+
+
+class _Boom(NodeHandler):
+    async def execute(self, node, context, engine):
+        msg = "provider down"
+        raise RuntimeError(msg)
+
+
+def _graph(middle_type: str) -> Graph:
+    g = Graph(id="g", name="G", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("prep", type="function", config={"action": "set_context", "values": {}}),
+        Node("ask", type=middle_type),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "prep"), Edge("prep", "ask"), Edge("ask", "end"))
+    return g
+
+
+def _events(caplog) -> list[tuple[str, str | None]]:
+    return [
+        (r.roomkit_graph["event"], r.roomkit_graph["node"])
+        for r in caplog.records
+        if hasattr(r, "roomkit_graph")
+    ]
+
+
+async def test_a_run_logs_each_step_its_pause_and_its_end(caplog):
+    caplog.set_level(logging.DEBUG, logger="roomkit_graph")
+    engine = WorkflowEngine(_graph("ask"), handlers={"ask": _Ask()})
+
+    await engine.run()
+    await engine.resume("ask", {"text": "ok"})
+    while await engine.step():
+        pass
+
+    assert _events(caplog) == [
+        ("run.start", None),
+        ("node.start", "start"),
+        ("node.complete", "start"),
+        ("node.start", "prep"),
+        ("node.complete", "prep"),
+        ("node.start", "ask"),
+        ("node.wait", "ask"),
+        ("node.resume", "ask"),
+        ("run.complete", None),
+    ]
+    assert {r.roomkit_graph["run"] for r in caplog.records} == {engine.run_id}
+
+
+class _Refuses(NodeHandler):
+    async def execute(self, node, context, engine):
+        return NodeResult(status="failed", error="no quota")
+
+
+@pytest.mark.parametrize(
+    ("handler", "error", "logged"),
+    [
+        (_Boom(), RuntimeError, "RuntimeError('provider down')"),
+        (_Refuses(), ExecutionError, "no quota"),
+    ],
+)
+async def test_a_failing_node_is_logged_before_its_error_propagates(
+    caplog, handler, error, logged
+):
+    caplog.set_level(logging.DEBUG, logger="roomkit_graph")
+    engine = WorkflowEngine(_graph("broken"), handlers={"broken": handler})
+
+    with pytest.raises(error):
+        await engine.run()
+
+    failed = [r for r in caplog.records if r.roomkit_graph["event"] == "node.fail"]
+    assert [(r.levelno, r.roomkit_graph["node"], r.roomkit_graph["error"]) for r in failed] == [
+        (logging.WARNING, "ask", logged)
+    ]
+
+
+async def test_verbose_prints_a_line_per_step_and_close_restores_the_logger():
+    logger = logging.getLogger("roomkit_graph")
+    before = (logger.level, logger.propagate)
+    out = io.StringIO()
+    handler = verbose(stream=out)
+    try:
+        engine = WorkflowEngine(_graph("ask"), handlers={"ask": _Ask()})
+        await engine.run()
+    finally:
+        handler.close()
+
+    prefix = f"[g {engine.run_id}] "
+    lines = [line.removeprefix(prefix) for line in out.getvalue().splitlines()]
+    assert lines[0] == "▶ run started"
+    assert "▶ prep (function)" in lines
+    assert lines[-1] == "⏸ ask · waiting for an answer"
+    assert (logger.level, logger.propagate, handler in logger.handlers) == (*before, False)

@@ -34,7 +34,7 @@ from roomkit.channels.agent import Agent
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.providers.sms.mock import MockSMSProvider
 
-from roomkit_graph import Condition, Edge, EventTrigger, Graph, Node, WorkflowEngine
+from roomkit_graph import Condition, Edge, EventTrigger, Graph, Node, WorkflowEngine, verbose
 from roomkit_graph.roomkit import RoomRuns, room_handlers
 
 MODEL = "claude-sonnet-5-5"
@@ -164,6 +164,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
+    verbose()  # each step on stderr as it happens; content=False hides the texts
     if "ANTHROPIC_API_KEY" not in os.environ:
         sys.exit("Set ANTHROPIC_API_KEY to run this example.")
     asyncio.run(main())
