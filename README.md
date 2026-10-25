@@ -422,6 +422,16 @@ agents, and each one's metadata names the graph, run and node that sent it
 (`{"workflow": {"graph": ..., "run": ..., "node": ...}}`). A room a
 `Discussion` runs takes them like any other.
 
+A host that serves several organizations names the one a run acts for in its
+trigger data's `organization_id`. Each room the run reaches is checked against
+it, as RoomKit checks a caller's `organization_id`: an `agent`, `notification`
+or `human` node aimed at another organization's room raises
+`RoomNotFoundError`, and nothing is asked or sent.
+
+```python
+await runs.start(engine, {"room_id": room.id, "organization_id": "acme"})
+```
+
 ## Examples
 
 Runnable examples are in [`examples/`](examples/):

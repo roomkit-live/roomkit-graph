@@ -6,7 +6,7 @@ import io
 import logging
 
 import pytest
-from roomkit import ChannelType, Discussion, RoomKit, SMSChannel
+from roomkit import ChannelType, Discussion, RoomKit, RoomNotFoundError, SMSChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.ai.base import (
@@ -70,10 +70,11 @@ async def test_structured_agent_node_outputs_the_submitted_result(kit):
     assert ctx.get("steps.work.data.urgent") is True
 
 
-async def test_human_node_pauses_until_the_answer_arrives_in_its_room(kit):
+@pytest.mark.parametrize("organization", [None, "acme"])
+async def test_human_node_pauses_until_the_answer_arrives_in_its_room(kit, organization):
     sms = MockSMSProvider()
     kit.register_channel(SMSChannel("sms", provider=sms))
-    await kit.create_room(room_id="ops")
+    await kit.create_room(room_id="ops", organization_id=organization)
     await kit.attach_channel("ops", "sms", metadata={"phone_number": "+15550109999"})
     g = Graph(id="approve", name="Approve", trigger=ManualTrigger())
     g.add_nodes(
@@ -86,7 +87,7 @@ async def test_human_node_pauses_until_the_answer_arrives_in_its_room(kit):
     engine = WorkflowEngine(g, handlers=room_handlers(kit))
     runs = RoomRuns()
 
-    await runs.start(engine, {"room_id": "ops", "amount": 120})
+    await runs.start(engine, {"room_id": "ops", "amount": 120, "organization_id": organization})
     assert engine.waiting is True
     assert await runs.answer("elsewhere", {"text": "yes"}) is False
     assert await runs.answer("ops", {"text": "yes"}) is True
@@ -125,6 +126,36 @@ async def test_a_notification_is_the_hosts_message_even_where_a_discussion_runs(
     [sent] = [e for e in await kit.store.list_events("team") if e.type == "message"]
     assert sent.source.channel_type == ChannelType.HOST
     assert sent.metadata["workflow"] == {"graph": "deploy", "run": engine.run_id, "node": "tell"}
+
+
+_REACHING = {
+    "agent": {"agent": "writer", "prompt": "Write"},
+    "notification": {"text": "Deploy done."},
+    "human": {"text": "Approve?"},
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_REACHING))
+async def test_a_run_reaches_no_room_of_another_organization(kit, kind):
+    """A run acts for the organization its trigger data names: an agent,
+    notification or human node aimed at another organization's room raises
+    RoomKit's RoomNotFoundError, and nothing is asked or sent."""
+    sms = MockSMSProvider()
+    provider = MockAIProvider(["A short report."])
+    kit.register_channel(SMSChannel("sms", provider=sms))
+    kit.register_channel(AIChannel("writer", provider=provider))
+    await kit.create_room(room_id="ops", organization_id="acme")
+    await kit.attach_channel("ops", "sms", metadata={"phone_number": "+15550109999"})
+    g = Graph(id="reach", name="Reach", trigger=ManualTrigger())
+    g.add_nodes(Node("start", type="start"), Node("reach", type=kind, config=_REACHING[kind]))
+    g.add_nodes(Node("end", type="end"))
+    g.add_edges(Edge("start", "reach"), Edge("reach", "end"))
+    engine = WorkflowEngine(g, handlers=room_handlers(kit))
+
+    with pytest.raises(RoomNotFoundError):
+        await engine.run({"room_id": "ops", "organization_id": "globex"})
+
+    assert (sms.sent, provider.calls) == ([], [])
 
 
 async def test_runs_paused_on_one_room_are_answered_in_the_order_they_asked(kit):
@@ -219,18 +250,19 @@ class _Tokens(AIProvider):
         yield StreamDone(finish_reason="stop", usage={})
 
 
-async def test_verbose_messages_shows_an_agent_node_writing(kit):
+@pytest.mark.parametrize("organization", [None, "acme"])
+async def test_verbose_messages_shows_an_agent_node_writing(kit, organization):
     words = [f"word{i} " for i in range(60)]
     kit.register_channel(
         Agent("writer", provider=_Tokens(words), role="Report writer", publish_text_deltas=True)
     )
-    room = await kit.create_room()
+    room = await kit.create_room(organization_id=organization)
     graph = _one_agent_graph({"agent": "writer", "prompt": "Write"})
     out = io.StringIO()
     handler = verbose(messages=True, stream=out)
     try:
         engine = WorkflowEngine(graph, handlers=room_handlers(kit))
-        await engine.run({"room_id": room.id})
+        await engine.run({"room_id": room.id, "organization_id": organization})
     finally:
         handler.close()
 

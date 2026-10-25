@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- A run acts for the organization its trigger data's `organization_id` names:
+  `agent`, `notification` and `human` nodes pass it to RoomKit (`delegate`,
+  `post`, and the child room's `subscribe_room`), so a node aimed at another
+  organization's room raises `RoomNotFoundError` and nothing is asked or
+  sent. A run that names none reaches any room, as before.
+
 ## [0.3.0] — 2026-10-25
 
 ### Changed

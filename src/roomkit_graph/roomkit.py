@@ -10,6 +10,11 @@ Every run works in a room, named by its trigger data's ``room_id``:
 - ``human`` nodes do the same, then pause the run until ``RoomRuns.answer()``
   brings the reply that arrives in that room.
 
+A host serving several organizations names the one a run acts for in its
+trigger data's ``organization_id``: every room the run reaches is checked
+against it (RoomKit's ``organization_id``), and another organization's raises
+``RoomNotFoundError``.
+
 ``room_handlers(kit)`` gives the three handlers; ``RoomRuns`` drives runs and
 keeps the paused ones by the room their answer will arrive in::
 
@@ -64,6 +69,7 @@ class _LiveText:
     engine: WorkflowEngine
     node: Node
     agent: str
+    organization_id: str | None = None
     subscription: str | None = None
     last_seen: float = 0.0
 
@@ -123,7 +129,7 @@ def _hook_live_text(kit: RoomKit) -> None:
         if metadata.get("agent_id") != watch.agent or "child_room_id" not in metadata:
             return
         watch.subscription = await kit.subscribe_room(
-            metadata["child_room_id"], watch.on_ephemeral
+            metadata["child_room_id"], watch.on_ephemeral, organization_id=watch.organization_id
         )
 
 
@@ -199,11 +205,19 @@ class AgentHandler(NodeHandler):
         structured: bool,
     ) -> DelegatedTaskResult:
         """Delegate; the agent's text is logged as it is written when content is."""
-        watch = _LiveText(engine, node, agent_id) if logger.isEnabledFor(logging.DEBUG) else None
+        organization_id = _organization(engine)
+        watch = None
+        if logger.isEnabledFor(logging.DEBUG):
+            watch = _LiveText(engine, node, agent_id, organization_id)
         token = _WATCHED.set(watch)
         try:
             task = await self._kit.delegate(
-                room_id, agent_id, prompt, wait=True, require_structured_result=structured
+                room_id,
+                agent_id,
+                prompt,
+                wait=True,
+                require_structured_result=structured,
+                organization_id=organization_id,
             )
             return await task.wait()
         finally:
@@ -282,7 +296,9 @@ class NotifyHandler(NodeHandler):
         room_id = resolve(node.config.get("room", _RUN_ROOM))
         text = resolve(node.config["text"])
         sender = {"graph": engine.graph.id, "run": engine.run_id, "node": node.id}
-        await self._kit.post(room_id, text, metadata={"workflow": sender})
+        await self._kit.post(
+            room_id, text, metadata={"workflow": sender}, organization_id=_organization(engine)
+        )
         log_run(
             logger,
             logging.INFO,
@@ -318,6 +334,12 @@ class AskHandler(NotifyHandler):
     ) -> NodeResult:
         room_id, _ = await self._send(node, engine, "question.sent")
         return NodeResult(output={"room": room_id}, status="waiting")
+
+
+def _organization(engine: WorkflowEngine) -> str | None:
+    """The organization the run acts for: its trigger data's
+    ``organization_id``, ``None`` when it names none."""
+    return engine.context.get("trigger.organization_id")
 
 
 def room_handlers(kit: RoomKit) -> dict[str, NodeHandler]:
