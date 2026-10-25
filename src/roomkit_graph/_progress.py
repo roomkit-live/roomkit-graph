@@ -185,8 +185,9 @@ def verbose(
     message sent is one line. With *content*, what each agent was asked and
     answered, and the text of each message, are printed too, cut to one line.
     With *messages*, each agent's text is printed as the agent writes it,
-    instead of its answer cut to one line (needs RoomKit 0.109 or later,
-    which publishes it; content is then shown whatever *content* says).
+    instead of its answer cut to one line, for an agent created with
+    ``publish_text_deltas=True``, which publishes it (content is then shown
+    whatever *content* says).
 
     The ``roomkit_graph`` logger then prints here only: it stops propagating,
     so a root handler does not print the same records again. ``close()`` on the

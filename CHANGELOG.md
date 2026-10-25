@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Requires RoomKit 0.109.0 or later (`roomkit>=0.109.0` in the `roomkit` and
+  `examples` extras), whose agents publish their text as `TEXT_DELTA`.
 - **Breaking:** `input.<...>` in a node's templates is the output of the node
   the run came from. A node with several incoming edges got
   `{source_id: output}` for every one of them, `None` for the branches not
@@ -28,9 +30,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names the agents, RoomKit runs their tools and skills in each task's room.
 - `verbose(messages=True)`: each agent's text printed as the agent writes it.
   `AgentHandler` subscribes to the delegated task's child room from
-  `ON_TASK_DELEGATED` when content is logged, and logs each `TEXT_DELTA`
-  (RoomKit 0.109+) as an `agent.text` record at DEBUG; with an earlier RoomKit
-  none arrives. The examples use it.
+  `ON_TASK_DELEGATED` when content is logged, and logs each `TEXT_DELTA` as an
+  `agent.text` record at DEBUG. RoomKit publishes them for an agent created
+  with `publish_text_deltas=True`, as the examples' agents are; for another
+  agent none arrives.
 - `verbose()`: every run's progress on stderr as it happens — each step, each
   agent's turn with its duration, tokens (cache included) and tools, each
   message sent, each pause and resume — one line each, prefixed by graph and

@@ -167,6 +167,7 @@ async def main(skills: SkillRegistry) -> None:
             description="Finds what happened to an order, from the shop's systems.",
             tools=INVESTIGATOR_TOOLS,
             tool_handler=investigator_tools,
+            publish_text_deltas=True,  # its text, live, for verbose(messages=True)
         )
     )
     kit.register_channel(
@@ -178,6 +179,7 @@ async def main(skills: SkillRegistry) -> None:
             tools=RESOLVER_TOOLS,
             tool_handler=resolver_tools,
             skills=skills,
+            publish_text_deltas=True,  # its text, live, for verbose(messages=True)
         )
     )
     room = await kit.create_room()
@@ -194,7 +196,7 @@ async def main(skills: SkillRegistry) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
-    verbose(messages=True)  # each step on stderr; agents' text as they write it (RoomKit 0.109+)
+    verbose(messages=True)  # each step on stderr; agents' text as they write it
     if "ANTHROPIC_API_KEY" not in os.environ:
         sys.exit("Set ANTHROPIC_API_KEY to run this example.")
     asyncio.run(main(load_skills()))

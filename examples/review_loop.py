@@ -106,6 +106,7 @@ async def setup_kit() -> RoomKit:
             provider=provider,
             role="Announcement writer",
             description="Writes short, concrete product announcements.",
+            publish_text_deltas=True,  # its text, live, for verbose(messages=True)
         )
     )
     # The run's own room, where the writer works; the editor's room, where
@@ -143,7 +144,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
-    verbose(messages=True)  # each step on stderr; agents' text as they write it (RoomKit 0.109+)
+    verbose(messages=True)  # each step on stderr; agents' text as they write it
     if "ANTHROPIC_API_KEY" not in os.environ:
         sys.exit("Set ANTHROPIC_API_KEY to run this example.")
     asyncio.run(main())

@@ -116,7 +116,13 @@ async def setup_kit() -> RoomKit:
     kit = RoomKit()
     kit.register_channel(SMSChannel("sms", provider=PrintingSMSProvider()))
     kit.register_channel(
-        Agent("triage", provider=provider, role="Support triage", description="Sorts requests.")
+        Agent(
+            "triage",
+            provider=provider,
+            role="Support triage",
+            description="Sorts requests.",
+            publish_text_deltas=True,  # its text, live, for verbose(messages=True)
+        )
     )
     kit.register_channel(
         Agent(
@@ -124,6 +130,7 @@ async def setup_kit() -> RoomKit:
             provider=provider,
             role="Support agent",
             description="Answers customers by SMS: short, warm, concrete.",
+            publish_text_deltas=True,  # its text, live, for verbose(messages=True)
         )
     )
     # The on-call engineer's own room: what the workflow sends there is texted
@@ -164,7 +171,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
-    verbose(messages=True)  # each step on stderr; agents' text as they write it (RoomKit 0.109+)
+    verbose(messages=True)  # each step on stderr; agents' text as they write it
     if "ANTHROPIC_API_KEY" not in os.environ:
         sys.exit("Set ANTHROPIC_API_KEY to run this example.")
     asyncio.run(main())

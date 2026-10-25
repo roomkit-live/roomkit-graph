@@ -63,8 +63,8 @@ _RUN_ROOM = "{{trigger.room_id}}"
 logger = logging.getLogger("roomkit_graph.roomkit")
 
 _TEXT_DELTA = "text_delta"
-"""The ephemeral an agent's answer text is published in as it is written
-(RoomKit 0.109 and later; with an earlier RoomKit, none arrives)."""
+"""The ephemeral an agent's answer text is published in as it is written,
+by an agent created with ``publish_text_deltas=True``; others publish none."""
 _QUIET_S = 0.02
 _SETTLE_S = 0.5
 

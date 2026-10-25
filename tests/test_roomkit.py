@@ -19,7 +19,6 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
-from roomkit.realtime.base import EphemeralEventType
 
 from roomkit_graph import Edge, Graph, ManualTrigger, Node, WorkflowEngine, verbose
 from roomkit_graph.roomkit import RoomRuns, room_handlers
@@ -191,12 +190,11 @@ class _Tokens(AIProvider):
         yield StreamDone(finish_reason="stop", usage={})
 
 
-@pytest.mark.skipif(
-    not hasattr(EphemeralEventType, "TEXT_DELTA"), reason="RoomKit publishes TEXT_DELTA from 0.109"
-)
 async def test_verbose_messages_shows_an_agent_node_writing(kit):
     words = [f"word{i} " for i in range(60)]
-    kit.register_channel(Agent("writer", provider=_Tokens(words), role="Report writer"))
+    kit.register_channel(
+        Agent("writer", provider=_Tokens(words), role="Report writer", publish_text_deltas=True)
+    )
     room = await kit.create_room()
     graph = _one_agent_graph({"agent": "writer", "prompt": "Write"})
     out = io.StringIO()

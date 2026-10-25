@@ -81,6 +81,7 @@ async def main(topic: str) -> None:
             provider=provider,
             role="Senior research analyst",
             description="Finds what matters on a topic and separates facts from hype.",
+            publish_text_deltas=True,  # its text, live, for verbose(messages=True)
         )
     )
     kit.register_channel(
@@ -89,6 +90,7 @@ async def main(topic: str) -> None:
             provider=provider,
             role="Report writer",
             description="Turns research notes into a clear, short report.",
+            publish_text_deltas=True,  # its text, live, for verbose(messages=True)
         )
     )
     room = await kit.create_room()
@@ -103,7 +105,7 @@ async def main(topic: str) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
-    verbose(messages=True)  # each step on stderr; agents' text as they write it (RoomKit 0.109+)
+    verbose(messages=True)  # each step on stderr; agents' text as they write it
     if "ANTHROPIC_API_KEY" not in os.environ:
         sys.exit("Set ANTHROPIC_API_KEY to run this example.")
     asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else "AI agents in customer support"))

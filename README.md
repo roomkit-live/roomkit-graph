@@ -267,9 +267,13 @@ instead of its answer cut to one line, a `✎` line per line of text:
 [research-crew d5c72753]   ✎ 1. **Fact: Assistive AI has the best evidence.** A large NBER study…
 ```
 
-It reads the `TEXT_DELTA` ephemerals RoomKit 0.109 and later publishes in a
-delegated task's child room; with an earlier RoomKit, no text arrives and
-nothing else changes.
+It reads the `TEXT_DELTA` ephemerals RoomKit publishes in a delegated task's
+child room, for an agent that asks for it; for another agent, no text arrives
+and nothing else changes:
+
+```python
+kit.register_channel(Agent("writer", provider=provider, publish_text_deltas=True))
+```
 
 Each line names its graph and run (`engine.run_id`), so runs that interleave
 stay apart. The `roomkit_graph` logger then prints there only; `close()` on the

@@ -658,15 +658,15 @@ wheels = [
 
 [[package]]
 name = "roomkit"
-version = "0.108.0"
+version = "0.109.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ef/71/681fc73fe3297f6e0a324f695d297c2f3de9857740d1995d9e8ec0c8e6b3/roomkit-0.108.0.tar.gz", hash = "sha256:4041e6d87dbd7fc12c95447c99d60c9904b77df3d05c45901338e275218a35bd", size = 5193813, upload-time = "2026-10-24T13:53:16.211Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/bd/fe5cd218eafa1b9375de421bf898f9a93242588e3fb1681047b84ba26cd4/roomkit-0.109.0.tar.gz", hash = "sha256:5c019d325506c69a2e1c2a2ea0d8bd6981d7f1b19a6672aafd7db916b4fc4ae3", size = 5375174, upload-time = "2026-10-25T19:01:34.372Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/ac/9bb0fc6cdfb597f7d9b4eaa332535905bc14235490cd3e86378230a173ab/roomkit-0.108.0-py3-none-any.whl", hash = "sha256:107ad97f3e4017e55f18ff2e5e39465035aa742225b88e12d4acb22a733197e4", size = 3206659, upload-time = "2026-10-24T13:53:18.515Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/88/ca8f0c4a0d3ed1e148fb98fa2a63537aa9e5a068229a4be9a15f28e18ef0/roomkit-0.109.0-py3-none-any.whl", hash = "sha256:8d38b2a1cdd945553521ee0f27c29f439188484568b8cbbd386f58284391f86a", size = 3261064, upload-time = "2026-10-25T19:01:37.101Z" },
 ]
 
 [package.optional-dependencies]
@@ -703,10 +703,10 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "roomkit", marker = "extra == 'dev'", specifier = ">=0.108.0" },
-    { name = "roomkit", marker = "extra == 'examples'", specifier = ">=0.108.0" },
-    { name = "roomkit", marker = "extra == 'roomkit'", specifier = ">=0.108.0" },
-    { name = "roomkit", extras = ["anthropic"], marker = "extra == 'examples'", specifier = ">=0.108.0" },
+    { name = "roomkit", marker = "extra == 'dev'", specifier = ">=0.109.0" },
+    { name = "roomkit", marker = "extra == 'examples'", specifier = ">=0.109.0" },
+    { name = "roomkit", marker = "extra == 'roomkit'", specifier = ">=0.109.0" },
+    { name = "roomkit", extras = ["anthropic"], marker = "extra == 'examples'", specifier = ">=0.109.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.26" },
 ]
