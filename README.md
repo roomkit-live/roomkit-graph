@@ -412,6 +412,10 @@ result = await kit.process_inbound(message)
 await runs.answer(result.event.room_id, {"text": message.content.body})
 ```
 
+Resume from what people send, as above: a hook that sees every message of the
+room also sees the workflow's own questions, which come from the host channel
+(`event.source.channel_type == ChannelType.HOST`).
+
 `RoomRuns.answer()` resumes the run paused on that room, if any; when several
 wait there, the one that asked first. It holds paused runs in memory; to survive
 a restart, store `engine.to_dict()` and rebuild with `WorkflowEngine.from_dict()`.

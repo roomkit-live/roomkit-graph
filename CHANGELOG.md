@@ -13,6 +13,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   organization's room raises `RoomNotFoundError` and nothing is asked or
   sent. A run that names none reaches any room, as before.
 
+### Fixed
+- Only the start node may be named `start`: a run's context keeps its
+  trigger data under that id (`trigger.*`, `steps.start`), and another node
+  named so replaced it with its own output, the run's room and organization
+  included. `Graph.validate()` reports it, and `WorkflowEngine.start()` and
+  `from_dict()` refuse such a graph, validated or not; `resume()` refuses the
+  id `start`, which no node waits under.
+
 ## [0.3.0] — 2026-10-25
 
 ### Changed

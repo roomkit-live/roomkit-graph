@@ -214,6 +214,49 @@ async def test_resume_after_human_node():
     assert executor.current_node_id is None
 
 
+async def test_a_run_refuses_a_node_that_would_overwrite_its_trigger():
+    """A node other than the start node named ``start`` would replace the
+    trigger data every later node reads (its room, the organization it acts
+    for): the run does not start."""
+    g = Graph(id="t", name="T", trigger=ManualTrigger())
+    rewrite = {"action": "set_context", "values": {"input": {"room_id": "elsewhere"}}}
+    g.add_nodes(
+        Node("begin", type="start"),
+        Node("start", type="function", config=rewrite),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("begin", "start"), Edge("start", "end"))
+    engine = WorkflowEngine(g)
+
+    with pytest.raises(ValueError, match="Only the start node may be named 'start'"):
+        await engine.run({"room_id": "acme-room"})
+
+    assert engine.current_node_id is None
+
+
+def test_a_restored_run_refuses_a_node_that_would_overwrite_its_trigger():
+    """State saved before the rule, or a graph changed while its run was
+    paused: the restored run does not go on either."""
+    g = Graph(id="t", name="T", trigger=ManualTrigger())
+    g.add_nodes(Node("begin", type="start"), Node("start", type="agent"), Node("end", type="end"))
+    g.add_edges(Edge("begin", "start"), Edge("start", "end"))
+
+    with pytest.raises(ValueError, match="Only the start node may be named 'start'"):
+        WorkflowEngine.from_dict(g, {"context": {}, "current_node_id": "start"})
+
+
+async def test_resume_refuses_the_id_that_holds_the_trigger():
+    """The start node never waits: a resume under ``start`` would only
+    replace the trigger data later nodes read."""
+    engine = WorkflowEngine(_linear_graph())
+    await engine.start({"room_id": "acme-room"})
+
+    with pytest.raises(ValueError, match="holds the run's trigger data"):
+        await engine.resume("start", {"input": {"room_id": "elsewhere"}})
+
+    assert engine.context.get("trigger.room_id") == "acme-room"
+
+
 async def test_step_before_start_returns_false():
     g = _linear_graph()
     executor = WorkflowEngine(g)

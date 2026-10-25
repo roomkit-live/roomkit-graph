@@ -170,6 +170,16 @@ def test_validate_multiple_start_nodes():
     assert any("start" in e.lower() for e in errors)
 
 
+def test_validate_refuses_another_node_named_start():
+    """``start`` names the trigger in a run's context (``trigger.*``,
+    ``steps.start``): another node under that id would overwrite it."""
+    g = Graph(id="test", name="Test", trigger=ManualTrigger())
+    g.add_nodes(Node("begin", type="start"), Node("start", type="agent"), Node("end", type="end"))
+    g.add_edges(Edge("begin", "start"), Edge("start", "end"))
+
+    assert g.validate() == ["Only the start node may be named 'start', not agent node 'start'"]
+
+
 def test_validate_edge_references_nonexistent_node():
     g = Graph(id="test", name="Test", trigger=ManualTrigger())
     g.add_nodes(Node("start", type="start"), Node("end", type="end"))

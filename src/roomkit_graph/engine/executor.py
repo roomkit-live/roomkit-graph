@@ -119,6 +119,7 @@ class WorkflowEngine(_StreamingMixin):
         if start_node is None:
             msg = "Graph has no start node"
             raise ValueError(msg)
+        self._refuse_misnamed_start()
         self._current = start_node.id
         self._previous = None
         self._run_id = uuid4().hex[:8]
@@ -208,8 +209,13 @@ class WorkflowEngine(_StreamingMixin):
         """Resume a paused workflow (e.g. after human input) with external data.
 
         Stores the input in context as the node's output, clears the waiting flag,
-        and advances past the waiting node by evaluating outgoing edges.
+        and advances past the waiting node by evaluating outgoing edges. The id
+        ``start`` is refused: the start node never waits, and the run's trigger
+        data is kept under it.
         """
+        if node_id == "start":
+            msg = "'start' holds the run's trigger data: resume names the node the run waits on"
+            raise ValueError(msg)
         self._context.set(node_id, input_data)
         self._waiting = False
         log_run(
@@ -221,6 +227,13 @@ class WorkflowEngine(_StreamingMixin):
             if next_id is not None:
                 self._previous = node_id
                 self._current = next_id
+
+    def _refuse_misnamed_start(self) -> None:
+        """Refuse a graph whose node other than the start node is named
+        ``start``, validated or not: its output would replace the trigger
+        data every later node reads."""
+        if (misnamed := self._graph._start_name_error()) is not None:
+            raise ValueError(misnamed)
 
     async def _execute(self, node: Node, handler: NodeHandler) -> NodeResult:
         """Run *handler* on *node*, logging its start and how it ended."""
@@ -381,6 +394,7 @@ class WorkflowEngine(_StreamingMixin):
         """Restore engine from serialized state."""
         ctx = WorkflowContext.from_dict(data["context"])
         engine = cls(graph, handlers=handlers, context=ctx)
+        engine._refuse_misnamed_start()
         engine._current = data.get("current_node_id")
         engine._previous = data.get("previous_node_id")
         engine._waiting = data.get("waiting", False)

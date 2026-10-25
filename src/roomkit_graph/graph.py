@@ -63,6 +63,15 @@ class Graph:
         """Get child nodes of a parallel node."""
         return [n for n in self.nodes.values() if n.parent == parent_id]
 
+    def _start_name_error(self) -> str | None:
+        """The error of a node other than the start node named ``start``: a
+        run's context keeps its trigger data under that id (``trigger.*``,
+        ``steps.start``), which the node's output would replace."""
+        node = self.nodes.get("start")
+        if node is None or node.type == NodeType.START:
+            return None
+        return f"Only the start node may be named 'start', not {node.type} node 'start'"
+
     def validate(self) -> list[str]:
         """Validate the graph structure. Returns list of error messages (empty = valid)."""
         errors: list[str] = []
@@ -81,6 +90,9 @@ class Graph:
 
         if len(end_nodes) == 0:
             errors.append("Graph must have at least one end node")
+
+        if (misnamed := self._start_name_error()) is not None:
+            errors.append(misnamed)
 
         # Check edge references
         for edge in self.edges:
