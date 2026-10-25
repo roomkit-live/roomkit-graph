@@ -4,8 +4,9 @@ Every run works in a room, named by its trigger data's ``room_id``:
 
 - ``agent`` nodes run a RoomKit agent on their prompt, in a child room of the
   run's room (``kit.delegate(..., wait=True)``);
-- ``notification`` nodes send a message into a room, so its transports deliver
-  it (an SMS to the room's correspondent);
+- ``notification`` nodes write into a room in the application's name
+  (``kit.post()``), so its transports deliver it (an SMS to the room's
+  correspondent) and none of its agents answers it;
 - ``human`` nodes do the same, then pause the run until ``RoomRuns.answer()``
   brings the reply that arrives in that room.
 
@@ -32,19 +33,7 @@ from dataclasses import dataclass
 from typing import Any
 
 try:
-    from roomkit import (
-        Channel,
-        ChannelCategory,
-        ChannelOutput,
-        ChannelType,
-        EventType,
-        HookExecution,
-        HookTrigger,
-        InboundMessage,
-        RoomEvent,
-        RoomKit,
-        TextContent,
-    )
+    from roomkit import EventType, HookExecution, HookTrigger, RoomKit
     from roomkit.models.task import DelegatedTaskResult
     from roomkit.tasks.models import TaskStatus
 except ImportError as exc:  # pragma: no cover - only without the extra
@@ -57,7 +46,6 @@ from roomkit_graph.engine.executor import WorkflowEngine
 from roomkit_graph.handlers import NodeHandler, NodeResult
 from roomkit_graph.nodes.base import Node
 
-WORKFLOW_CHANNEL_ID = "workflow"
 _RUN_ROOM = "{{trigger.room_id}}"
 
 logger = logging.getLogger("roomkit_graph.roomkit")
@@ -134,31 +122,9 @@ def _hook_live_text(kit: RoomKit) -> None:
             return
         if metadata.get("agent_id") != watch.agent or "child_room_id" not in metadata:
             return
-        watch.subscription = await kit.realtime.subscribe_to_room(
+        watch.subscription = await kit.subscribe_room(
             metadata["child_room_id"], watch.on_ephemeral
         )
-
-
-class WorkflowChannel(Channel):
-    """The workflow's own voice in a room.
-
-    What the workflow sends from it reaches the room's transports. It answers
-    nothing, unlike an agent attached to the room, which would reply to every
-    inbound message.
-    """
-
-    channel_type = ChannelType.SYSTEM
-    category = ChannelCategory.INTELLIGENCE
-
-    def __init__(self) -> None:
-        super().__init__(WORKFLOW_CHANNEL_ID)
-
-    async def handle_inbound(self, message: InboundMessage, context: Any) -> RoomEvent:
-        msg = "The workflow channel receives nothing"
-        raise TypeError(msg)
-
-    async def deliver(self, event: RoomEvent, binding: Any, context: Any) -> ChannelOutput:
-        return ChannelOutput.empty()
 
 
 class AgentHandler(NodeHandler):
@@ -244,7 +210,7 @@ class AgentHandler(NodeHandler):
             _WATCHED.reset(token)
             if watch is not None and watch.subscription is not None:
                 await watch.settle()
-                await self._kit.realtime.unsubscribe(watch.subscription)
+                await self._kit.unsubscribe_room(watch.subscription)
 
     async def _log_done(
         self, node: Node, engine: WorkflowEngine, result: DelegatedTaskResult
@@ -296,14 +262,14 @@ class AgentHandler(NodeHandler):
 class NotifyHandler(NodeHandler):
     """Sends ``config["text"]`` into ``config["room"]`` (default: the run's room).
 
-    The message comes from the ``WorkflowChannel``, attached to the room on
-    first use. The output is ``{"room": <room id>, "text": <text sent>}``.
+    The message is the application's own (RoomKit's ``kit.post()``): the
+    room's transports deliver it, no agent of the room answers it, and its
+    metadata names the graph, run and node that sent it, under ``workflow``.
+    The output is ``{"room": <room id>, "text": <text sent>}``.
     """
 
     def __init__(self, kit: RoomKit) -> None:
         self._kit = kit
-        if self._kit.get_channel(WORKFLOW_CHANNEL_ID) is None:
-            self._kit.register_channel(WorkflowChannel())
 
     async def execute(
         self, node: Node, context: WorkflowContext, engine: WorkflowEngine
@@ -315,12 +281,8 @@ class NotifyHandler(NodeHandler):
         resolve = engine.template_resolver.resolve
         room_id = resolve(node.config.get("room", _RUN_ROOM))
         text = resolve(node.config["text"])
-        if not await self._kit.store.binding_exists(room_id, WORKFLOW_CHANNEL_ID):
-            await self._kit.attach_channel(room_id, WORKFLOW_CHANNEL_ID)
-        # addressed_to=[]: a message for the people in the room, no agent's turn.
-        await self._kit.send_event(
-            room_id, WORKFLOW_CHANNEL_ID, TextContent(body=text), addressed_to=[]
-        )
+        sender = {"graph": engine.graph.id, "run": engine.run_id, "node": node.id}
+        await self._kit.post(room_id, text, metadata={"workflow": sender})
         log_run(
             logger,
             logging.INFO,

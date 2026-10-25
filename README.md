@@ -397,7 +397,7 @@ named by its trigger data's `room_id`:
 | Node | Config | What happens |
 |---|---|---|
 | `agent` | `agent`, `prompt`, optional `structured`, `room` | The RoomKit agent works on the prompt in a child room of the run's room; the output is `{"text": ...}`, or with `structured` the agent's `submit_result` call (`{"status", "summary", "data", ...}`) |
-| `notification` | `text`, optional `room` | The text is sent into the room, so its transports deliver it — an SMS to the room's correspondent |
+| `notification` | `text`, optional `room` | The text is written into the room in the application's name, so its transports deliver it — an SMS to the room's correspondent — and none of its agents answers it |
 | `human` | `text`, optional `room` | Sent the same way, then the run pauses until the answer arrives in that room |
 
 ```python
@@ -416,8 +416,11 @@ await runs.answer(result.event.room_id, {"text": message.content.body})
 wait there, the one that asked first. It holds paused runs in memory; to survive
 a restart, store `engine.to_dict()` and rebuild with `WorkflowEngine.from_dict()`.
 
-The workflow speaks in a room through a `WorkflowChannel`, registered and
-attached on first use: unlike an agent attached to the room, it answers nothing.
+The workflow writes in a room as the application, with RoomKit's `kit.post()`:
+the room's transports deliver its messages, they solicit none of the room's
+agents, and each one's metadata names the graph, run and node that sent it
+(`{"workflow": {"graph": ..., "run": ..., "node": ...}}`). A room a
+`Discussion` runs takes them like any other.
 
 ## Examples
 

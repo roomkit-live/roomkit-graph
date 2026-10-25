@@ -49,7 +49,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `roomkit_graph.roomkit`, behind the `roomkit` extra: `agent`, `notification`
   and `human` nodes run with RoomKit agents and rooms (`room_handlers(kit)`),
   `RoomRuns` resuming a run paused on a person when their answer arrives in
-  the room, and the `WorkflowChannel` the workflow speaks from.
+  the room. `notification` and `human` nodes write as the application, with
+  RoomKit's `kit.post()`: the room's transports deliver the message, no
+  agent of the room answers it, and its metadata names the graph, run and
+  node under `workflow`.
 - `WorkflowEngine.waiting` — whether the run is paused on `current_node_id`
   until `resume()`. It was only readable through `to_dict()["waiting"]`.
 - Examples run by RoomKit agents, behind the `examples` extra:

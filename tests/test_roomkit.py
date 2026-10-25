@@ -6,7 +6,7 @@ import io
 import logging
 
 import pytest
-from roomkit import RoomKit, SMSChannel
+from roomkit import ChannelType, Discussion, RoomKit, SMSChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.ai.base import (
@@ -96,6 +96,35 @@ async def test_human_node_pauses_until_the_answer_arrives_in_its_room(kit):
         ("+15550109999", "Noted: yes"),
     ]
     assert engine.current_node_id is None
+
+
+async def test_a_notification_is_the_hosts_message_even_where_a_discussion_runs(kit):
+    """The workflow writes as the application (RoomKit's ``kit.post()``), a
+    transport of the room: a room a Discussion runs, which takes no agent it
+    did not name, gets it, its agent does not answer it, and the stored
+    message says which run and step sent it."""
+    sms = MockSMSProvider()
+    provider = MockAIProvider(["unused"])
+    kit.register_channel(SMSChannel("sms", provider=sms))
+    kit.register_channel(AIChannel("assistant", provider=provider))
+    await kit.create_room(room_id="team", orchestration=Discussion(agents=["assistant"]))
+    await kit.attach_channel("team", "sms", metadata={"phone_number": "+15550109999"})
+    g = Graph(id="deploy", name="Deploy", trigger=ManualTrigger())
+    g.add_nodes(
+        Node("start", type="start"),
+        Node("tell", type="notification", config={"text": "Deploy {{trigger.version}} done."}),
+        Node("end", type="end"),
+    )
+    g.add_edges(Edge("start", "tell"), Edge("tell", "end"))
+    engine = WorkflowEngine(g, handlers=room_handlers(kit))
+
+    await engine.run({"room_id": "team", "version": "1.4"})
+
+    assert [s["event"].content.body for s in sms.sent] == ["Deploy 1.4 done."]
+    assert provider.calls == []
+    [sent] = [e for e in await kit.store.list_events("team") if e.type == "message"]
+    assert sent.source.channel_type == ChannelType.HOST
+    assert sent.metadata["workflow"] == {"graph": "deploy", "run": engine.run_id, "node": "tell"}
 
 
 async def test_runs_paused_on_one_room_are_answered_in_the_order_they_asked(kit):
