@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-25
+
 ### Changed
 - Requires RoomKit 0.109.0 or later (`roomkit>=0.109.0` in the `roomkit` and
   `examples` extras), whose agents publish their text as `TEXT_DELTA`.
