@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-25
+
 ### Added
 - A run acts for the organization its trigger data's `organization_id` names:
   `agent`, `notification` and `human` nodes pass it to RoomKit (`delegate`,
