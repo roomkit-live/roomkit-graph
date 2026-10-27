@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Requires RoomKit 0.110.0 or later (`roomkit>=0.110.0` in the `roomkit` and
+  `examples` extras). On 0.109.0, an agent created with
+  `publish_text_deltas=True`, as the examples and `verbose(messages=True)`
+  ask, published the text of every turn as `TEXT_DELTA`, the text of an
+  answer a `BEFORE_BROADCAST` hook blocked or redacted included. 0.110.0
+  publishes it only for a delegated task's trace, the text `AgentHandler`
+  reads.
+
 ## [0.4.0] — 2026-10-25
 
 ### Added

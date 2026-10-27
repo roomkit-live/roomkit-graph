@@ -275,6 +275,11 @@ and nothing else changes:
 kit.register_channel(Agent("writer", provider=provider, publish_text_deltas=True))
 ```
 
+RoomKit 0.110.0, which roomkit-graph requires, publishes that text only for a
+delegated task's trace: the text of an answer a `BEFORE_BROADCAST` hook blocks
+or redacts never reaches a subscriber. On 0.109.0 the flag published the text
+of every turn of the agent, that answer's included.
+
 Each line names its graph and run (`engine.run_id`), so runs that interleave
 stay apart. The `roomkit_graph` logger then prints there only; `close()` on the
 handler `verbose()` returns gives it back.
