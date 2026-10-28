@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-10-27
+
 ### Changed
 - Requires RoomKit 0.110.0 or later (`roomkit>=0.110.0` in the `roomkit` and
   `examples` extras). On 0.109.0, an agent created with
